@@ -1,0 +1,19 @@
+[package]
+name = "fission-occt"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+fission-kernel = { path = "../fission-kernel" }
+fission-f3d = { path = "../fission-f3d" }
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "zstd"] }
+opencascade.workspace = true
+glam.workspace = true
+cxx = "1"
+
+[dev-dependencies]
+fission-model = { path = "../fission-model" }
+
+[build-dependencies]
+cxx-build = "1"
+occt-sys = "7.8.1"

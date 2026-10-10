@@ -1,0 +1,160 @@
+use eframe::egui::{self, RichText, Stroke};
+
+use super::icons::{self, Icon};
+use super::theme;
+use crate::app::FissionApp;
+
+pub fn show(app: &mut FissionApp, ui: &mut egui::Ui) {
+    egui::Panel::left("browser")
+        .resizable(true)
+        .default_size(220.0)
+        .frame(
+            egui::Frame::NONE
+                .fill(theme::PANEL)
+                .stroke(Stroke::new(1.0, theme::BORDER))
+                .inner_margin(egui::Margin::symmetric(8, 6)),
+        )
+        .show(ui, |ui| {
+            ui.label(RichText::new("BROWSER").small().strong().color(theme::MUTED));
+            ui.add_space(2.0);
+            egui::ScrollArea::vertical().show(ui, |ui| tree(app, ui));
+        });
+}
+
+/// An imported body's parts (a Fusion design's bodies, a STEP assembly's
+/// solids), each with its own visibility.
+fn parts(app: &mut FissionApp, ui: &mut egui::Ui, feature: usize) {
+    let count = app.import_parts.get(feature).copied().unwrap_or(0);
+    let Some(fission_model::FeatureKind::ImportStep { hidden_parts, .. }) = app.doc.features.get(feature).map(|f| &f.kind) else {
+        return;
+    };
+    if count < 2 {
+        return;
+    }
+    let hidden = hidden_parts.clone();
+    ui.indent(("parts", feature), |ui| {
+        egui::CollapsingHeader::new(format!("Parts ({} of {count} shown)", count - hidden.len().min(count)))
+            .id_salt(("parts", feature))
+            .show(ui, |ui| {
+                let mut toggle = None;
+                ui.horizontal(|ui| {
+                    if ui.small_button("Show all").clicked() {
+                        toggle = Some(None);
+                    }
+                });
+                for p in 0..count {
+                    ui.horizontal(|ui| {
+                        let visible = !hidden.contains(&p);
+                        let eye = if visible { Icon::Eye } else { Icon::EyeOff };
+                        if icons::button(ui, eye, 16.0, if visible { "Hide" } else { "Show" }).clicked() {
+                            toggle = Some(Some((p, !visible)));
+                        }
+                        let text = RichText::new(format!("Part {}", p + 1));
+                        ui.label(if visible { text } else { text.color(theme::MUTED) });
+                    });
+                }
+                match toggle {
+                    Some(Some((p, v))) => app.set_import_part_visible(feature, p, v),
+                    Some(None) => app.commit(|doc| {
+                        if let Some(fission_model::FeatureKind::ImportStep { hidden_parts, .. }) =
+                            doc.features.get_mut(feature).map(|f| &mut f.kind)
+                        {
+                            hidden_parts.clear();
+                        }
+                    }),
+                    None => {}
+                }
+            });
+    });
+}
+
+fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
+    egui::CollapsingHeader::new(RichText::new(&app.doc.name).strong())
+        .id_salt("doc_root")
+        .default_open(true)
+        .show(ui, |ui| {
+            egui::CollapsingHeader::new("Document Settings").id_salt("settings").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Name");
+                    ui.text_edit_singleline(&mut app.doc.name);
+                });
+                ui.label(RichText::new("Units: mm").color(theme::MUTED));
+            });
+
+            egui::CollapsingHeader::new("Origin").id_salt("origin").show(ui, |ui| {
+                for (name, color) in [("X", egui::Color32::from_rgb(217, 51, 51)), ("Y", egui::Color32::from_rgb(51, 166, 64)), ("Z", egui::Color32::from_rgb(51, 102, 217))] {
+                    ui.label(RichText::new(format!("{name} axis")).color(color));
+                }
+                ui.label("XY plane");
+                ui.label("XZ plane");
+                ui.label("YZ plane");
+            });
+
+            let count = app.bodies.len();
+            egui::CollapsingHeader::new(format!("Bodies ({count})"))
+                .id_salt("bodies")
+                .default_open(true)
+                .show(ui, |ui| {
+                    if count == 0 {
+                        ui.label(RichText::new("No bodies").color(theme::MUTED));
+                    }
+                    for i in 0..count {
+                        ui.horizontal(|ui| {
+                            let visible = app.bodies[i].visible;
+                            let eye = if visible { Icon::Eye } else { Icon::EyeOff };
+                            if icons::button(ui, eye, 18.0, if visible { "Hide" } else { "Show" }).clicked() {
+                                app.set_body_visible(app.bodies[i].created_by, !visible);
+                            }
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                            icons::paint(ui.painter(), rect, Icon::Body, theme::ICON);
+                            let faces = app.bodies[i].mesh.face_ids.iter().max().map_or(0, |m| m + 1);
+                            let selected = app.viewport.selection.iter().any(|p| p.body() == i);
+                            let response = ui
+                                .selectable_label(selected, &app.bodies[i].name)
+                                .on_hover_text(format!("{faces} faces, {} triangles", app.bodies[i].mesh.triangle_count()));
+                            let created_by = app.bodies[i].created_by;
+                            response.context_menu(|ui| {
+                                if ui.button("Appearance…").clicked() {
+                                    app.appearance = Some(crate::ui::appearance::AppearanceDialog {
+                                        targets: vec![created_by],
+                                        custom: app.doc.features.get(created_by).and_then(|f| f.color).unwrap_or([0.6, 0.6, 0.65]),
+                                    });
+                                    ui.close();
+                                }
+                                if ui.button(if visible { "Hide" } else { "Show" }).clicked() {
+                                    app.set_body_visible(created_by, !visible);
+                                    ui.close();
+                                }
+                            });
+                        });
+                        parts(app, ui, app.bodies[i].created_by);
+                    }
+                });
+
+            egui::CollapsingHeader::new(format!("Features ({})", app.doc.features.len()))
+                .id_salt("features")
+                .show(ui, |ui| {
+                    let mut edit = None;
+                    for (i, feature) in app.doc.features.iter().enumerate() {
+                        let selected = app.selected_feature == Some(i);
+                        let mut text = RichText::new(&feature.name);
+                        if i >= app.doc.marker || feature.suppressed {
+                            text = text.color(theme::MUTED);
+                        }
+                        if matches!(app.status.get(i), Some(fission_model::FeatureStatus::Error(_))) {
+                            text = text.color(theme::ERROR);
+                        }
+                        let response = ui.selectable_label(selected, text);
+                        if response.clicked() {
+                            app.selected_feature = Some(i);
+                        }
+                        if response.double_clicked() {
+                            edit = Some(i);
+                        }
+                    }
+                    if let Some(i) = edit {
+                        app.begin_edit(i);
+                    }
+                });
+        });
+}

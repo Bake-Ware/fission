@@ -1,0 +1,11 @@
+[package]
+name = "kernel-lab"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+opencascade.workspace = true
+glam.workspace = true
+fission-kernel = { path = "../fission-kernel" }
+fission-occt = { path = "../fission-occt" }
+fission-model = { path = "../fission-model" }

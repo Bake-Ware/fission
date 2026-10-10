@@ -1,0 +1,12 @@
+[package]
+name = "fission-model"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+fission-kernel = { path = "../fission-kernel" }
+serde = { version = "1", features = ["derive"] }
+ron = "0.12"
+thiserror = "2"
+fission-sketch = { path = "../fission-sketch" }
+fission-f3d = { path = "../fission-f3d" }

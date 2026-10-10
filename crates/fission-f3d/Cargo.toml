@@ -1,0 +1,8 @@
+[package]
+name = "fission-f3d"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs", "zstd"] }
+thiserror = "2"

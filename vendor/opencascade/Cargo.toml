@@ -1,0 +1,19 @@
+[package]
+name = "opencascade"
+description = "A high level Rust wrapper to build 3D models in code, using the OpenCascade CAD kernel"
+authors = ["Brian Schwind <brianmschwind@gmail.com>"]
+license = "LGPL-2.1"
+version = "0.3.0"
+edition = "2021"
+repository = "https://github.com/bschwind/opencascade-rs"
+
+[dependencies]
+cxx = "1"
+opencascade-sys = { git = "https://github.com/bschwind/opencascade-rs", rev = "32758df23a137f4e7c786c618b0317fc3badb3b2" }
+glam = { version = "0.24", features = ["bytemuck"] }
+opencascade-kicad-parser = { git = "https://github.com/bschwind/opencascade-rs", rev = "32758df23a137f4e7c786c618b0317fc3badb3b2" }
+thiserror = "1"
+
+[features]
+default = ["builtin"]
+builtin = ["opencascade-sys/builtin"]
