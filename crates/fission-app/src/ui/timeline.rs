@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use eframe::egui::{self, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use fission_model::{FeatureKind, FeatureStatus};
 
 use super::icons::{self, Icon};
@@ -48,8 +48,8 @@ pub fn show(app: &mut FissionApp, ui: &mut egui::Ui) {
         .exact_size(44.0)
         .frame(
             egui::Frame::NONE
-                .fill(theme::PANEL)
-                .stroke(Stroke::new(1.0, theme::BORDER))
+                .fill(theme::panel())
+                .stroke(Stroke::new(1.0, theme::border()))
                 .inner_margin(egui::Margin::symmetric(8, 6)),
         )
         .show(ui, |ui| {
@@ -84,7 +84,7 @@ fn chips(app: &mut FissionApp, ui: &mut egui::Ui) {
     let width = n as f32 * (CHIP + GAP) + GAP;
     let (strip, strip_response) = ui.allocate_exact_size(Vec2::new(width.max(60.0), CHIP + 4.0), Sense::hover());
     let painter = ui.painter_at(strip.expand(2.0));
-    painter.rect_filled(strip, 4.0, Color32::from_rgb(232, 234, 238));
+    painter.rect_filled(strip, 4.0, theme::palette().strip);
 
     let chip_rect = |i: usize| {
         Rect::from_min_size(Pos2::new(strip.min.x + GAP + i as f32 * (CHIP + GAP), strip.min.y + 2.0), Vec2::splat(CHIP))
@@ -103,17 +103,17 @@ fn chips(app: &mut FissionApp, ui: &mut egui::Ui) {
 
         let selected = app.selected_feature == Some(i) || app.editing.as_ref().is_some_and(|e| e.index == i);
         let (fill, stroke) = match (&status, selected) {
-            (FeatureStatus::Error(_), _) => (Color32::from_rgb(253, 228, 226), Stroke::new(1.5, theme::ERROR)),
-            (_, true) => (Color32::from_rgb(214, 234, 250), Stroke::new(1.5, theme::ACCENT)),
-            _ if response.hovered() => (Color32::WHITE, Stroke::new(1.0, theme::ACCENT.linear_multiply(0.6))),
-            _ => (Color32::WHITE, Stroke::new(1.0, theme::BORDER)),
+            (FeatureStatus::Error(_), _) => (theme::palette().chip_error, Stroke::new(1.5, theme::error())),
+            (_, true) => (theme::palette().chip_selected, Stroke::new(1.5, theme::accent())),
+            _ if response.hovered() => (theme::palette().surface, Stroke::new(1.0, theme::accent().linear_multiply(0.6))),
+            _ => (theme::palette().surface, Stroke::new(1.0, theme::border())),
         };
         painter.rect_filled(rect, 3.0, fill);
         painter.rect_stroke(rect, 3.0, stroke, egui::StrokeKind::Inside);
-        let icon_color = if inactive { Color32::from_gray(175) } else { theme::ICON };
+        let icon_color = if inactive { theme::palette().icon_off } else { theme::icon() };
         icons::paint(&painter, rect.shrink(4.0), icon_for(&feature.kind), icon_color);
         if feature.suppressed {
-            painter.line_segment([rect.left_bottom(), rect.right_top()], Stroke::new(1.2, theme::MUTED));
+            painter.line_segment([rect.left_bottom(), rect.right_top()], Stroke::new(1.2, theme::muted()));
         }
 
         let tip = match &status {
@@ -148,7 +148,7 @@ fn chips(app: &mut FissionApp, ui: &mut egui::Ui) {
                 action = Some(ChipAction::Move(i, i + 1));
             }
             ui.separator();
-            if ui.button(RichText::new("Delete").color(theme::ERROR)).clicked() {
+            if ui.button(RichText::new("Delete").color(theme::error())).clicked() {
                 action = Some(ChipAction::Delete(i));
             }
         });
@@ -184,7 +184,7 @@ fn chips(app: &mut FissionApp, ui: &mut egui::Ui) {
         }
     }
     let active = marker_response.hovered() || marker_response.dragged();
-    let color = if active { theme::ACCENT } else { Color32::from_rgb(90, 96, 106) };
+    let color = if active { theme::accent() } else { theme::palette().marker };
     painter.vline(marker_x, strip.y_range().expand(1.0), Stroke::new(3.0, color));
     let top = strip.min.y - 1.0;
     painter.add(egui::Shape::convex_polygon(
@@ -224,7 +224,7 @@ enum ChipAction {
 
 fn info(app: &FissionApp, ui: &mut egui::Ui) {
     let tris: usize = app.bodies.iter().filter(|b| b.visible).map(|b| b.mesh.triangle_count()).sum();
-    ui.label(RichText::new(format!("{:.0} ms · {tris} tris", app.regen_ms)).small().color(theme::MUTED))
+    ui.label(RichText::new(format!("{:.0} ms · {tris} tris", app.regen_ms)).small().color(theme::muted()))
         .on_hover_text("Last regeneration time and displayed triangles");
     let shown = app.viewport.hovered.or(app.viewport.selection.last().copied());
     let Some(pick) = shown else { return };

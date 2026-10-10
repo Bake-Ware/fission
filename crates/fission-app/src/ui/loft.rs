@@ -201,7 +201,7 @@ impl FissionApp {
             return;
         }
         let painter = ui.painter_at(self.viewport.rect);
-        let stroke = Stroke::new(3.0, theme::ACCENT);
+        let stroke = Stroke::new(3.0, theme::accent());
         for (c, _) in out.sketch.chain(path.curve).0 {
             let pts: Vec<Pos2> = curve_points(&out.sketch, c)
                 .into_iter()

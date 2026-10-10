@@ -11,6 +11,7 @@ use fission_kernel::Mesh;
 use glam::{Vec2, Vec3, Vec4Swizzles};
 
 use renderer::{Frame, ViewportRenderer};
+use crate::ui::theme;
 
 /// One body's display data.
 pub struct DisplayBody {
@@ -230,7 +231,7 @@ impl Viewport {
                 .collect();
             painter.line(points, stroke);
         };
-        let selected = Stroke::new(3.0, Color32::from_rgb(6, 150, 215));
+        let selected = Stroke::new(3.0, theme::accent());
         for p in &self.selection {
             if let Pick::Edge(e) = p {
                 draw(e.body, e.edge, selected);
@@ -357,9 +358,9 @@ impl Viewport {
         let mut clicked = None;
         for (depth, view, label, corners) in &visible {
             let inside = hover.is_some_and(|p| point_in_quad(p, corners));
-            let shade = (200.0 + 55.0 * depth) as u8;
+            let shade = (theme::palette().cube_shade as f32 + 55.0 * depth) as u8;
             let fill = if inside { Color32::from_rgb(150, 200, 245) } else { Color32::from_gray(shade) };
-            painter.add(egui::Shape::convex_polygon(corners.to_vec(), fill, Stroke::new(1.0, Color32::from_gray(110))));
+            painter.add(egui::Shape::convex_polygon(corners.to_vec(), fill, Stroke::new(1.0, theme::palette().cube_stroke)));
             if *depth > 0.3 {
                 let mid = corners.iter().fold(EVec2::ZERO, |acc, p| acc + p.to_vec2()) / 4.0;
                 painter.text(
@@ -367,7 +368,7 @@ impl Viewport {
                     egui::Align2::CENTER_CENTER,
                     *label,
                     egui::FontId::proportional(9.0),
-                    Color32::from_gray(60),
+                    theme::palette().cube_text,
                 );
             }
             if inside && response.clicked() {
@@ -407,7 +408,7 @@ fn point_in_quad(p: Pos2, quad: &[Pos2; 4]) -> bool {
 }
 
 fn draw_home_icon(painter: &egui::Painter, rect: Rect, hovered: bool) {
-    let color = if hovered { Color32::from_rgb(6, 150, 215) } else { Color32::from_gray(90) };
+    let color = if hovered { theme::accent() } else { theme::palette().cube_text };
     let c = rect.center();
     let s = rect.width() / 2.0 - 2.0;
     let roof = [Pos2::new(c.x - s, c.y), Pos2::new(c.x, c.y - s), Pos2::new(c.x + s, c.y)];

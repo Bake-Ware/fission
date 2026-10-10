@@ -57,7 +57,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: Rect) {
                     }
                 }
                 for (k, e) in feature.exprs.iter().filter(|(k, _)| !k.starts_with("dim:")) {
-                    ui.label(RichText::new("fx").small().color(theme::ACCENT));
+                    ui.label(RichText::new("fx").small().color(theme::accent()));
                     ui.label(RichText::new(format!("{k} = {e}")).small());
                     ui.end_row();
                 }
@@ -78,7 +78,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: Rect) {
 
             if let Some(FeatureStatus::Error(message)) = app.status.get(index) {
                 ui.add_space(4.0);
-                ui.label(RichText::new(format!("⚠ {message}")).color(theme::ERROR));
+                ui.label(RichText::new(format!("⚠ {message}")).color(theme::error()));
             }
 
             ui.add_space(6.0);
@@ -88,7 +88,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: Rect) {
                     if ui.button("Cancel").clicked() {
                         close = Some(false);
                     }
-                    let ok = egui::Button::new(RichText::new("OK").color(egui::Color32::WHITE)).fill(theme::ACCENT);
+                    let ok = egui::Button::new(RichText::new("OK").color(egui::Color32::WHITE)).fill(theme::accent());
                     if ui.add(ok).clicked() {
                         close = Some(true);
                     }
@@ -128,7 +128,7 @@ fn edge_fields(ui: &mut egui::Ui, edges: &mut Vec<EdgeRef>, preview: &mut bool) 
     ui.label("Edges");
     ui.horizontal(|ui| {
         if edges.is_empty() {
-            ui.label(RichText::new("All edges (click edges to choose)").color(theme::MUTED));
+            ui.label(RichText::new("All edges (click edges to choose)").color(theme::muted()));
         } else {
             ui.label(format!("{} selected", edges.len()));
             if ui.small_button("Clear").clicked() {
@@ -150,7 +150,7 @@ fn picked_label(ui: &mut egui::Ui, label: &str, count: usize, none: &str, list_c
     ui.label(label);
     ui.horizontal(|ui| {
         if count == 0 {
-            ui.label(RichText::new(none).color(theme::MUTED));
+            ui.label(RichText::new(none).color(theme::muted()));
         } else {
             ui.label(format!("{count} selected"));
             if ui.small_button("Clear").clicked() {
@@ -248,7 +248,7 @@ fn fields(
         }
         FeatureKind::Thread { face, size, pitch, left_hand } => {
             ui.label("Face");
-            ui.label(RichText::new(format!("{} (click a round face to change)", body_name(bases, face.body))).color(theme::MUTED));
+            ui.label(RichText::new(format!("{} (click a round face to change)", body_name(bases, face.body))).color(theme::muted()));
             ui.end_row();
             changed |= preview_row(ui, preview);
             ui.label("Size");
@@ -300,7 +300,7 @@ fn fields(
             ui.label(kind.as_str());
             ui.end_row();
             ui.label("");
-            ui.label(RichText::new(if note.is_empty() { "Not replayed yet: the model continues without it." } else { note.as_str() }).color(theme::MUTED));
+            ui.label(RichText::new(if note.is_empty() { "Not replayed yet: the model continues without it." } else { note.as_str() }).color(theme::muted()));
             ui.end_row();
         }
         FeatureKind::DeleteFace { faces } => {
@@ -396,7 +396,7 @@ fn fields(
                     }
                 }
                 None => {
-                    ui.label(RichText::new("Last body (click to choose)").color(theme::MUTED));
+                    ui.label(RichText::new("Last body (click to choose)").color(theme::muted()));
                 }
             });
             ui.end_row();
@@ -412,7 +412,7 @@ fn fields(
             changed |= length(ui, offset, None);
             ui.end_row();
             ui.label("");
-            ui.label(RichText::new("Or click a planar face to split along it").color(theme::MUTED));
+            ui.label(RichText::new("Or click a planar face to split along it").color(theme::muted()));
             ui.end_row();
         }
         FeatureKind::Scale { bodies, center, factor } => {
@@ -515,7 +515,7 @@ fn fields(
             ui.label("Profiles");
             ui.horizontal(|ui| {
                 if sections.len() < 2 {
-                    ui.label(RichText::new(format!("{} picked: click profiles in order", sections.len())).color(theme::ERROR));
+                    ui.label(RichText::new(format!("{} picked: click profiles in order", sections.len())).color(theme::error()));
                 } else {
                     ui.label(format!("{} profiles", sections.len()));
                 }
@@ -539,7 +539,7 @@ fn fields(
                     }
                 }
                 None => {
-                    ui.label(RichText::new("Click a sketch line or arc").color(theme::ERROR));
+                    ui.label(RichText::new("Click a sketch line or arc").color(theme::error()));
                 }
             });
             ui.end_row();
@@ -596,7 +596,7 @@ fn fields(
         }
         FeatureKind::Hole { flip, diameter, depth, through, kind, tip_angle, .. } => {
             ui.label("Placement");
-            ui.label(RichText::new("Click a face to move the hole").small().color(theme::MUTED));
+            ui.label(RichText::new("Click a face to move the hole").small().color(theme::muted()));
             ui.end_row();
             ui.label("Type");
             egui::ComboBox::from_id_salt("hole_kind").selected_text(kind.label()).show_ui(ui, |ui| {
@@ -756,7 +756,7 @@ fn sketch_fields(ui: &mut egui::Ui, sketch: &mut Sketch) -> bool {
         ui.label("Profile");
         ui.horizontal(|ui| {
             if points.is_empty() {
-                ui.label(RichText::new("Click regions in the sketch").color(theme::ERROR));
+                ui.label(RichText::new("Click regions in the sketch").color(theme::error()));
             } else {
                 ui.label(format!("{} selected", points.len()));
                 if ui.small_button("Clear").clicked() {

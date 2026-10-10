@@ -58,17 +58,17 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
         .default_pos(ctx.content_rect().center())
         .show(ctx, |ui| {
             if names.is_empty() {
-                ui.label(RichText::new("No body to color").color(theme::ERROR));
+                ui.label(RichText::new("No body to color").color(theme::error()));
                 return;
             }
-            ui.label(RichText::new(format!("Applies to: {}", names.join(", "))).small().color(theme::MUTED));
+            ui.label(RichText::new(format!("Applies to: {}", names.join(", "))).small().color(theme::muted()));
             ui.add_space(4.0);
             egui::Grid::new("swatches").num_columns(4).spacing([6.0, 6.0]).show(ui, |ui| {
                 for (i, (name, rgb)) in SWATCHES.iter().enumerate() {
                     let (rect, response) = ui.allocate_exact_size(egui::vec2(52.0, 30.0), egui::Sense::click());
                     ui.painter().rect_filled(rect, 3.0, to_color32(*rgb));
                     if response.hovered() {
-                        ui.painter().rect_stroke(rect, 3.0, Stroke::new(2.0, theme::ACCENT), egui::StrokeKind::Outside);
+                        ui.painter().rect_stroke(rect, 3.0, Stroke::new(2.0, theme::accent()), egui::StrokeKind::Outside);
                     }
                     if response.on_hover_text(*name).clicked() {
                         apply = Some(Some(*rgb));

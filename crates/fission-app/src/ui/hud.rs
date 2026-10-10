@@ -93,7 +93,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("value_hud")).fixed_pos(pos).order(egui::Order::Foreground).show(ctx, |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new(label).small().color(theme::MUTED));
+                ui.label(RichText::new(label).small().color(theme::muted()));
                 let edit = egui::TextEdit::singleline(&mut hud.text).desired_width(90.0).id(egui::Id::new("value_hud_text"));
                 let response = ui.add(edit);
                 if hud.fresh {
@@ -114,7 +114,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
                 }
             });
             if let Some(err) = &hud.error {
-                ui.label(RichText::new(err).small().color(theme::ERROR));
+                ui.label(RichText::new(err).small().color(theme::error()));
             }
         });
     });

@@ -52,7 +52,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
             });
             egui::Grid::new("param_grid").num_columns(6).striped(true).spacing([8.0, 4.0]).show(ui, |ui| {
                 for h in ["Name", "Unit", "Expression", "Value", "Comment", ""] {
-                    ui.label(RichText::new(h).small().color(theme::MUTED));
+                    ui.label(RichText::new(h).small().color(theme::muted()));
                 }
                 ui.end_row();
                 for (i, p) in app.doc.parameters.iter_mut().enumerate() {
@@ -65,7 +65,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
                     commit |= ui.add_sized([140.0, 20.0], egui::TextEdit::singleline(&mut p.expression)).lost_focus();
                     match values.as_ref().map(|v| v.get(&p.name).copied()) {
                         Ok(Some(v)) => ui.label(format!("{v:.3} {}", unit(p.quantity))),
-                        _ => ui.label(RichText::new("—").color(theme::ERROR)),
+                        _ => ui.label(RichText::new("—").color(theme::error())),
                     };
                     ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut p.comment));
                     if ui.small_button("−").on_hover_text("Delete this parameter").clicked() {
@@ -75,7 +75,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
                 }
             });
             if let Err(e) = &values {
-                ui.label(RichText::new(e).color(theme::ERROR));
+                ui.label(RichText::new(e).color(theme::error()));
             }
 
             // Feature values tied to expressions.
@@ -96,7 +96,7 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
             ui.label(
                 RichText::new("Use a name in any value box: type `width / 2` while extruding, or in a sketch dimension.")
                     .small()
-                    .color(theme::MUTED),
+                    .color(theme::muted()),
             );
         });
     if let Some(i) = remove {

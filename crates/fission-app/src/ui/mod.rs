@@ -27,17 +27,17 @@ pub fn overlay(app: &FissionApp, ui: &mut egui::Ui, viewport: Rect) {
             egui::Align2::CENTER_CENTER,
             "Empty design. Press E to extrude a rectangle, or use CREATE above.",
             egui::FontId::proportional(14.0),
-            theme::MUTED,
+            theme::muted(),
         );
     }
 
     if let Some(toast) = &app.toast {
         let pos = egui::pos2(viewport.center().x, viewport.max.y - 18.0);
-        let color = if toast.error { theme::ERROR } else { theme::TEXT };
+        let color = if toast.error { theme::error() } else { theme::text() };
         let galley = painter.layout_no_wrap(toast.text.clone(), egui::FontId::proportional(13.0), color);
         let rect = Rect::from_center_size(pos, galley.size() + egui::vec2(20.0, 10.0));
         painter.rect_filled(rect, 4.0, egui::Color32::from_white_alpha(235));
-        painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, theme::BORDER), egui::StrokeKind::Inside);
+        painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, theme::border()), egui::StrokeKind::Inside);
         painter.galley(rect.center() - galley.size() / 2.0, galley, color);
     }
 
@@ -53,7 +53,7 @@ pub fn overlay(app: &FissionApp, ui: &mut egui::Ui, viewport: Rect) {
             egui::Align2::LEFT_BOTTOM,
             text,
             egui::FontId::proportional(13.0),
-            if session.message.is_some() { theme::ERROR } else { theme::TEXT },
+            if session.message.is_some() { theme::error() } else { theme::text() },
         );
     }
 
@@ -64,6 +64,6 @@ pub fn overlay(app: &FissionApp, ui: &mut egui::Ui, viewport: Rect) {
         egui::Align2::LEFT_BOTTOM,
         RichText::new(hint).text(),
         egui::FontId::proportional(11.0),
-        theme::MUTED,
+        theme::muted(),
     );
 }

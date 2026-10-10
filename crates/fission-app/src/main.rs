@@ -64,38 +64,13 @@ fn run_gui(path: Option<PathBuf>) -> ExitCode {
     }
 }
 
-/// A shaded isometric cube on a rounded blue tile, drawn procedurally.
+/// A cube split in two along a glowing cut, on a dark rounded tile
+/// (`assets/icon.svg`, rasterized to raw RGBA).
 fn app_icon() -> eframe::egui::IconData {
-    const N: usize = 64;
-    let mut rgba = vec![0u8; N * N * 4];
-    let c = N as f32 / 2.0;
-    for y in 0..N {
-        for x in 0..N {
-            let (px, py) = (x as f32 + 0.5 - c, y as f32 + 0.5 - c);
-            // Rounded-square tile.
-            let q = (px.abs() - 26.0).max(0.0).hypot((py.abs() - 26.0).max(0.0));
-            if q > 5.0 {
-                continue;
-            }
-            let mut color = [6u8, 150, 215];
-            // Pointy-top hexagon (circumradius 1) split at its center into
-            // three rhombi: an isometric cube with a lit top.
-            let (u, v) = (px / 20.0, py / 20.0);
-            let inside = u.abs() <= 0.866 && v.abs() + 0.577 * u.abs() <= 1.0;
-            if inside {
-                color = if v <= -0.577 * u.abs() {
-                    [235, 242, 250]
-                } else if u < 0.0 {
-                    [190, 205, 222]
-                } else {
-                    [150, 168, 190]
-                };
-            }
-            let i = (y * N + x) * 4;
-            rgba[i..i + 4].copy_from_slice(&[color[0], color[1], color[2], 255]);
-        }
-    }
-    eframe::egui::IconData { rgba, width: N as u32, height: N as u32 }
+    const N: u32 = 256;
+    let rgba = include_bytes!("../assets/icon-256.rgba").to_vec();
+    debug_assert_eq!(rgba.len(), (N * N * 4) as usize);
+    eframe::egui::IconData { rgba, width: N, height: N }
 }
 
 /// Wayland compositors take the window icon from a .desktop file matching the
@@ -113,7 +88,7 @@ fn install_desktop() -> ExitCode {
         }
     };
     let icon = app_icon();
-    let icon_path = home.join(".local/share/icons/hicolor/64x64/apps/fission.png");
+    let icon_path = home.join(".local/share/icons/hicolor/256x256/apps/fission.png");
     let desktop_path = home.join(".local/share/applications/fission.desktop");
     let desktop = format!(
         "[Desktop Entry]\nType=Application\nName=Fission\nComment=Parametric CAD\nExec={} %f\nIcon=fission\n\
@@ -122,6 +97,8 @@ fn install_desktop() -> ExitCode {
         exe.display()
     );
     let result = (|| -> std::io::Result<()> {
+        // Earlier versions wrote a 64 px icon that would shadow this one.
+        let _ = std::fs::remove_file(home.join(".local/share/icons/hicolor/64x64/apps/fission.png"));
         std::fs::create_dir_all(icon_path.parent().unwrap())?;
         std::fs::write(&icon_path, png::encode_rgba(icon.width, icon.height, &icon.rgba))?;
         std::fs::create_dir_all(desktop_path.parent().unwrap())?;

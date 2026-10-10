@@ -84,7 +84,7 @@ pub struct FissionApp {
 
 impl FissionApp {
     pub fn new(cc: &eframe::CreationContext<'_>, path: Option<PathBuf>) -> Self {
-        ui::theme::apply(&cc.egui_ctx);
+        ui::theme::init(&cc.egui_ctx);
         let render_state = cc.wgpu_render_state.clone().expect("fission needs the wgpu renderer");
 
         let mut app = FissionApp {

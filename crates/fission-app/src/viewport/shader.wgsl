@@ -7,6 +7,10 @@ struct Globals {
     bodies: vec4<u32>,
     // Section plane: keep where dot(xyz, p) <= w; off when xyz is zero.
     clip: vec4<f32>,
+    // Background gradient; theme.x is 1 in dark mode.
+    bg_top: vec4<f32>,
+    bg_bottom: vec4<f32>,
+    theme: vec4<f32>,
     // Per display body (< 32): appearance color, used when alpha > 0.
     colors: array<vec4<f32>, 32>,
 };
@@ -47,9 +51,7 @@ fn bg_vs(@builtin(vertex_index) i: u32) -> BgOut {
 
 @fragment
 fn bg_fs(in: BgOut) -> @location(0) vec4<f32> {
-    let bottom = vec3<f32>(0.74, 0.76, 0.79);
-    let top = vec3<f32>(0.97, 0.97, 0.98);
-    return vec4<f32>(mix(bottom, top, clamp(in.t, 0.0, 1.0)), 1.0);
+    return vec4<f32>(mix(globals.bg_bottom.rgb, globals.bg_top.rgb, clamp(in.t, 0.0, 1.0)), 1.0);
 }
 
 // ---- shaded faces ----
@@ -149,6 +151,10 @@ fn line_fs(in: LineOut) -> @location(0) vec4<f32> {
     // Model edges are the opaque lines; the grid and axes stay uncut.
     if (in.color.a > 0.99 && is_clipped(in.world)) {
         discard;
+    }
+    // Dark mode: the grid (faint, uncolored lines) turns light.
+    if (globals.theme.x > 0.5 && in.color.a < 0.5) {
+        return vec4<f32>(vec3<f32>(0.75, 0.78, 0.85), in.color.a * 0.8);
     }
     return in.color;
 }

@@ -125,10 +125,10 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: egui::Rect) {
         .fixed_pos(egui::pos2(viewport.max.x - 270.0, viewport.min.y + 120.0))
         .show(ctx, |ui| {
             if labels.is_empty() {
-                ui.label(RichText::new("Click a face or an edge.").color(theme::MUTED));
+                ui.label(RichText::new("Click a face or an edge.").color(theme::muted()));
             }
             for (i, l) in labels.iter().enumerate() {
-                ui.label(RichText::new(format!("{}: {l}", i + 1)).small().color(theme::MUTED));
+                ui.label(RichText::new(format!("{}: {l}", i + 1)).small().color(theme::muted()));
             }
             egui::Grid::new("measure_rows").num_columns(2).spacing([12.0, 4.0]).show(ui, |ui| {
                 for (k, v) in &rows {
@@ -153,10 +153,10 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: egui::Rect) {
     if let [a, b] = points.as_slice() {
         if let (Some(sa), Some(sb)) = (app.viewport.to_screen(*a), app.viewport.to_screen(*b)) {
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("measure_line")));
-            painter.line_segment([sa, sb], Stroke::new(2.0, theme::ACCENT));
+            painter.line_segment([sa, sb], Stroke::new(2.0, theme::accent()));
             for s in [sa, sb] {
                 painter.circle_filled(s, 4.0, Color32::WHITE);
-                painter.circle_stroke(s, 4.0, Stroke::new(1.5, theme::ACCENT));
+                painter.circle_stroke(s, 4.0, Stroke::new(1.5, theme::accent()));
             }
         }
     }

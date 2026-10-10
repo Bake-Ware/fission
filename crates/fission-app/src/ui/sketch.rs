@@ -1353,15 +1353,15 @@ pub fn draw(app: &mut FissionApp, ui: &mut egui::Ui, index: usize, active: bool,
         let selected = session.is_some_and(|s| s.selection.contains(&Item::Curve(c)));
         let hovered = session.is_some_and(|s| s.hovered == Some(Item::Curve(c)));
         let color = if selected {
-            theme::ACCENT
+            theme::accent()
         } else if hovered {
             Color32::from_rgb(120, 190, 245)
         } else if curve.construction() {
             Color32::from_rgb(230, 140, 40)
         } else if !active {
-            Color32::from_rgb(70, 90, 120)
+            theme::palette().ink_inactive
         } else if fully {
-            Color32::from_rgb(20, 20, 20)
+            theme::palette().ink
         } else {
             Color32::from_rgb(40, 110, 200)
         };
@@ -1378,7 +1378,7 @@ pub fn draw(app: &mut FissionApp, ui: &mut egui::Ui, index: usize, active: bool,
         let pts: Vec<Pos2> = session.trim_preview.iter().copied().filter_map(to_screen).collect();
         if pts.len() > 1 {
             if session.tool == Tool::Extend {
-                painter.add(egui::Shape::dashed_line(&pts, Stroke::new(3.0, theme::ACCENT), 6.0, 3.0));
+                painter.add(egui::Shape::dashed_line(&pts, Stroke::new(3.0, theme::accent()), 6.0, 3.0));
             } else {
                 painter.line(pts, Stroke::new(3.0, Color32::from_rgb(220, 40, 40)));
             }
@@ -1399,7 +1399,7 @@ pub fn draw(app: &mut FissionApp, ui: &mut egui::Ui, index: usize, active: bool,
         let selected = session.selection.contains(&Item::Point(i));
         let hovered = session.hovered == Some(Item::Point(i));
         let size = if hovered || selected { 4.0 } else { 2.5 };
-        let color = if selected { theme::ACCENT } else if hovered { Color32::from_rgb(120, 190, 245) } else { Color32::from_gray(40) };
+        let color = if selected { theme::accent() } else if hovered { Color32::from_rgb(120, 190, 245) } else { theme::palette().ink };
         painter.rect_filled(egui::Rect::from_center_size(s, egui::vec2(size * 2.0, size * 2.0)), 1.0, color);
     }
 
@@ -1597,12 +1597,12 @@ pub fn draw(app: &mut FissionApp, ui: &mut egui::Ui, index: usize, active: bool,
         };
         let expr = exprs.get(&fission_model::dim_key(k));
         let text = if expr.is_some() { format!("fx: {prefix}{value:.2}") } else { format!("{prefix}{value:.2}") };
-        let galley = painter.layout_no_wrap(text, egui::FontId::proportional(12.0), Color32::from_rgb(20, 20, 20));
+        let galley = painter.layout_no_wrap(text, egui::FontId::proportional(12.0), theme::palette().ink);
         let rect = egui::Rect::from_center_size(pos + egui::vec2(0.0, -12.0), galley.size() + egui::vec2(8.0, 4.0));
         let response = ui.interact(rect, ui.id().with(("dim", index, k)), egui::Sense::click());
-        let bg = if response.hovered() { Color32::from_rgb(222, 236, 248) } else { Color32::from_white_alpha(220) };
+        let bg = if response.hovered() { theme::palette().hover } else { theme::palette().label_bg };
         painter.rect_filled(rect, 2.0, bg);
-        painter.galley(rect.center() - galley.size() / 2.0, galley, Color32::from_rgb(20, 20, 20));
+        painter.galley(rect.center() - galley.size() / 2.0, galley, theme::palette().ink);
         if response.double_clicked() || response.clicked() {
             edit_request = Some((k, expr.cloned().unwrap_or_else(|| format!("{value:.2}"))));
         }
@@ -1733,7 +1733,7 @@ pub fn draw_construction_planes(app: &FissionApp, ui: &mut egui::Ui) {
         if corners.len() == 4 {
             let fill = Color32::from_rgba_unmultiplied(230, 160, 60, 30);
             painter.add(egui::Shape::convex_polygon(corners.clone(), fill, Stroke::new(1.0, Color32::from_rgb(210, 140, 50))));
-            painter.text(corners[2], egui::Align2::LEFT_BOTTOM, label, egui::FontId::proportional(12.0), theme::TEXT);
+            painter.text(corners[2], egui::Align2::LEFT_BOTTOM, label, egui::FontId::proportional(12.0), theme::text());
         }
     }
 }
@@ -1767,7 +1767,7 @@ pub fn draw_plane_picker(app: &mut FissionApp, ui: &mut egui::Ui, clicked: bool)
         };
         if corners.len() == 4 {
             painter.add(egui::Shape::convex_polygon(corners.clone(), fill, Stroke::new(1.0, Color32::from_rgb(200, 130, 40))));
-            painter.text(corners[2], egui::Align2::LEFT_BOTTOM, label, egui::FontId::proportional(12.0), theme::TEXT);
+            painter.text(corners[2], egui::Align2::LEFT_BOTTOM, label, egui::FontId::proportional(12.0), theme::text());
         }
     }
     if clicked {

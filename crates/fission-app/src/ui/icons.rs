@@ -77,7 +77,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             // A dashed rectangle with a pencil across it.
             let r = [p(0.12, 0.30), p(0.70, 0.30), p(0.70, 0.88), p(0.12, 0.88), p(0.12, 0.30)];
             painter.add(egui::Shape::dashed_line(&r, Stroke::new(s.width * 0.8, color), 3.0, 2.0));
-            painter.line_segment([p(0.40, 0.62), p(0.88, 0.14)], Stroke::new(s.width * 2.2, theme::ACCENT));
+            painter.line_segment([p(0.40, 0.62), p(0.88, 0.14)], Stroke::new(s.width * 2.2, theme::accent()));
             painter.line_segment([p(0.33, 0.70), p(0.40, 0.62)], s);
         }
         Icon::Line => {
@@ -112,7 +112,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             painter.line_segment([p(0.12, 0.70), p(0.88, 0.70)], s);
             painter.line_segment([p(0.12, 0.55), p(0.12, 0.85)], s);
             painter.line_segment([p(0.88, 0.55), p(0.88, 0.85)], s);
-            painter.text(p(0.5, 0.40), egui::Align2::CENTER_CENTER, "10", egui::FontId::proportional(rect.height() * 0.36), theme::ACCENT);
+            painter.text(p(0.5, 0.40), egui::Align2::CENTER_CENTER, "10", egui::FontId::proportional(rect.height() * 0.36), theme::accent());
         }
         Icon::FinishSketch => {
             painter.line(vec![p(0.15, 0.55), p(0.42, 0.80), p(0.88, 0.22)], Stroke::new(s.width * 2.0, Color32::from_rgb(40, 160, 70)));
@@ -124,11 +124,11 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::ConCoincident => {
             painter.line_segment([p(0.12, 0.80), p(0.50, 0.45)], s);
             painter.line_segment([p(0.50, 0.45), p(0.88, 0.80)], s);
-            painter.circle_filled(p(0.50, 0.45), rect.width() * 0.10, theme::ACCENT);
+            painter.circle_filled(p(0.50, 0.45), rect.width() * 0.10, theme::accent());
         }
         Icon::ConTangent => {
             painter.circle_stroke(p(0.50, 0.58), rect.width() * 0.28, s);
-            painter.line_segment([p(0.08, 0.30), p(0.92, 0.30)], Stroke::new(s.width, theme::ACCENT));
+            painter.line_segment([p(0.08, 0.30), p(0.92, 0.30)], Stroke::new(s.width, theme::accent()));
         }
         Icon::ConEqual => {
             painter.line_segment([p(0.18, 0.40), p(0.82, 0.40)], s);
@@ -156,20 +156,20 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         }
         Icon::ConMidpoint => {
             painter.line_segment([p(0.10, 0.75), p(0.90, 0.75)], s);
-            painter.add(egui::Shape::convex_polygon(vec![p(0.50, 0.38), p(0.66, 0.62), p(0.34, 0.62)], theme::ACCENT, Stroke::NONE));
+            painter.add(egui::Shape::convex_polygon(vec![p(0.50, 0.38), p(0.66, 0.62), p(0.34, 0.62)], theme::accent(), Stroke::NONE));
         }
         Icon::ConConcentric => {
             painter.circle_stroke(p(0.5, 0.5), rect.width() * 0.38, s);
-            painter.circle_stroke(p(0.5, 0.5), rect.width() * 0.18, Stroke::new(s.width, theme::ACCENT));
+            painter.circle_stroke(p(0.5, 0.5), rect.width() * 0.18, Stroke::new(s.width, theme::accent()));
         }
         Icon::Shell => {
             painter.rect_stroke(Rect::from_min_max(p(0.12, 0.25), p(0.88, 0.85)), 2.0, s, egui::StrokeKind::Middle);
-            painter.rect_stroke(Rect::from_min_max(p(0.28, 0.25), p(0.72, 0.70)), 1.0, Stroke::new(s.width, theme::ACCENT), egui::StrokeKind::Middle);
+            painter.rect_stroke(Rect::from_min_max(p(0.28, 0.25), p(0.72, 0.70)), 1.0, Stroke::new(s.width, theme::accent()), egui::StrokeKind::Middle);
         }
         Icon::Combine => {
             painter.rect_filled(Rect::from_min_max(p(0.12, 0.35), p(0.62, 0.85)), 2.0, fill);
             painter.rect_stroke(Rect::from_min_max(p(0.12, 0.35), p(0.62, 0.85)), 2.0, s, egui::StrokeKind::Middle);
-            painter.rect_stroke(Rect::from_min_max(p(0.38, 0.15), p(0.88, 0.65)), 2.0, Stroke::new(s.width, theme::ACCENT), egui::StrokeKind::Middle);
+            painter.rect_stroke(Rect::from_min_max(p(0.38, 0.15), p(0.88, 0.65)), 2.0, Stroke::new(s.width, theme::accent()), egui::StrokeKind::Middle);
         }
         Icon::Move => {
             let c = p(0.5, 0.5);
@@ -182,7 +182,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let low = vec![p(0.08, 0.78), p(0.62, 0.78), p(0.92, 0.58), p(0.38, 0.58)];
             let high = vec![p(0.08, 0.40), p(0.62, 0.40), p(0.92, 0.20), p(0.38, 0.20)];
             painter.add(egui::Shape::convex_polygon(low, fill, s));
-            painter.add(egui::Shape::convex_polygon(high, theme::ACCENT.linear_multiply(0.25), Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::convex_polygon(high, theme::accent().linear_multiply(0.25), Stroke::new(s.width, theme::accent())));
             painter.arrow(p(0.50, 0.66), Vec2::new(0.0, -0.30 * rect.height()), s);
         }
         Icon::PlaneAtAngle => {
@@ -190,12 +190,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let flat = vec![p(0.08, 0.82), p(0.62, 0.82), p(0.92, 0.62), p(0.38, 0.62)];
             let tipped = vec![p(0.08, 0.82), p(0.62, 0.82), p(0.80, 0.22), p(0.26, 0.22)];
             painter.add(egui::Shape::convex_polygon(flat, fill, s));
-            painter.add(egui::Shape::convex_polygon(tipped, theme::ACCENT.linear_multiply(0.25), Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::convex_polygon(tipped, theme::accent().linear_multiply(0.25), Stroke::new(s.width, theme::accent())));
         }
         Icon::Scale => {
             // A small square growing into a big one along the diagonal.
             painter.rect_stroke(Rect::from_min_max(p(0.12, 0.52), p(0.48, 0.88)), 1.0, s, egui::StrokeKind::Middle);
-            painter.rect_stroke(Rect::from_min_max(p(0.12, 0.12), p(0.88, 0.88)), 1.0, Stroke::new(s.width, theme::ACCENT), egui::StrokeKind::Middle);
+            painter.rect_stroke(Rect::from_min_max(p(0.12, 0.12), p(0.88, 0.88)), 1.0, Stroke::new(s.width, theme::accent()), egui::StrokeKind::Middle);
             painter.arrow(p(0.42, 0.58), Vec2::new(0.30, -0.30) * rect.width(), s);
         }
         Icon::Unsupported => {
@@ -203,20 +203,20 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let r = Rect::from_min_max(p(0.15, 0.15), p(0.85, 0.85));
             let corners = [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom(), r.left_top()];
             painter.add(egui::Shape::dashed_line(&corners, s, rect.width() * 0.1, rect.width() * 0.06));
-            painter.text(r.center(), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(rect.height() * 0.55), theme::ERROR);
+            painter.text(r.center(), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(rect.height() * 0.55), theme::error());
         }
         Icon::DeleteFace => {
             // A block with its face struck through.
             let body = vec![p(0.15, 0.85), p(0.75, 0.85), p(0.75, 0.30), p(0.15, 0.30)];
             painter.add(egui::Shape::closed_line(body, s));
-            let x = Stroke::new(s.width * 1.3, theme::ERROR);
+            let x = Stroke::new(s.width * 1.3, theme::error());
             painter.line_segment([p(0.55, 0.12), p(0.92, 0.50)], x);
             painter.line_segment([p(0.92, 0.12), p(0.55, 0.50)], x);
         }
         Icon::Thread => {
             // A bolt shank with slanted thread crests.
             painter.rect_stroke(Rect::from_min_max(p(0.30, 0.10), p(0.70, 0.90)), 1.0, s, egui::StrokeKind::Middle);
-            let crest = Stroke::new(s.width, theme::ACCENT);
+            let crest = Stroke::new(s.width, theme::accent());
             for i in 0..5 {
                 let y = 0.22 + 0.15 * i as f32;
                 painter.line_segment([p(0.22, y + 0.06), p(0.78, y - 0.06)], crest);
@@ -231,18 +231,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                     p(0.5 + 0.30 * a.cos(), 0.88 - 0.76 * t + 0.07 * a.sin())
                 })
                 .collect();
-            painter.add(egui::Shape::line(pts, Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::line(pts, Stroke::new(s.width, theme::accent())));
         }
         Icon::Sphere => {
             // A ball: an outline, its equator, and a highlight.
-            painter.circle(p(0.5, 0.5), rect.width() * 0.36, theme::ACCENT.linear_multiply(0.2), s);
+            painter.circle(p(0.5, 0.5), rect.width() * 0.36, theme::accent().linear_multiply(0.2), s);
             let eq: Vec<Pos2> = (0..=24)
                 .map(|i| {
                     let t = std::f32::consts::PI * i as f32 / 24.0;
                     p(0.5 - 0.36 * t.cos(), 0.5 + 0.10 * t.sin())
                 })
                 .collect();
-            painter.add(egui::Shape::line(eq, Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::line(eq, Stroke::new(s.width, theme::accent())));
         }
         Icon::Torus => {
             // A ring seen at an angle: two ellipses.
@@ -255,30 +255,30 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                     .collect();
                 painter.add(egui::Shape::line(pts, stroke));
             }
-            painter.add(egui::Shape::line_segment([p(0.10, 0.5), p(0.34, 0.5)], Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::line_segment([p(0.10, 0.5), p(0.34, 0.5)], Stroke::new(s.width, theme::accent())));
         }
         Icon::Point => {
             // An accent dot where two faint lines cross.
             let faint = Stroke::new(s.width * 0.7, color.linear_multiply(0.5));
             painter.line_segment([p(0.12, 0.72), p(0.88, 0.40)], faint);
             painter.line_segment([p(0.30, 0.15), p(0.62, 0.90)], faint);
-            painter.circle(p(0.50, 0.57), rect.width() * 0.11, theme::ACCENT, Stroke::new(s.width * 0.8, color));
+            painter.circle(p(0.50, 0.57), rect.width() * 0.11, theme::accent(), Stroke::new(s.width * 0.8, color));
         }
         Icon::OffsetFace => {
             // A block whose top is lifted, with an arrow pulling it.
             let body = vec![p(0.15, 0.88), p(0.70, 0.88), p(0.70, 0.50), p(0.15, 0.50)];
             painter.add(egui::Shape::closed_line(body, s));
             let lifted = vec![p(0.15, 0.50), p(0.70, 0.50), p(0.70, 0.30), p(0.15, 0.30)];
-            painter.add(egui::Shape::convex_polygon(lifted, theme::ACCENT.linear_multiply(0.25), Stroke::new(s.width, theme::ACCENT)));
-            painter.arrow(p(0.84, 0.62), Vec2::new(0.0, -0.48) * rect.width(), Stroke::new(s.width, theme::ACCENT));
+            painter.add(egui::Shape::convex_polygon(lifted, theme::accent().linear_multiply(0.25), Stroke::new(s.width, theme::accent())));
+            painter.arrow(p(0.84, 0.62), Vec2::new(0.0, -0.48) * rect.width(), Stroke::new(s.width, theme::accent()));
         }
         Icon::Split => {
             // A block in two halves pulled apart along an accent cut.
             let left = vec![p(0.10, 0.82), p(0.44, 0.82), p(0.38, 0.22), p(0.10, 0.22)];
             let right = vec![p(0.56, 0.82), p(0.90, 0.82), p(0.90, 0.22), p(0.62, 0.22)];
             painter.add(egui::Shape::closed_line(left, s));
-            painter.add(egui::Shape::convex_polygon(right, theme::ACCENT.linear_multiply(0.25), Stroke::new(s.width, theme::ACCENT)));
-            let dash = Stroke::new(s.width, theme::ACCENT);
+            painter.add(egui::Shape::convex_polygon(right, theme::accent().linear_multiply(0.25), Stroke::new(s.width, theme::accent())));
+            let dash = Stroke::new(s.width, theme::accent());
             painter.add(egui::Shape::dashed_line(&[p(0.53, 0.95), p(0.47, 0.08)], dash, rect.width() * 0.08, rect.width() * 0.06));
         }
         Icon::Draft => {
@@ -286,12 +286,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let upright = vec![p(0.18, 0.85), p(0.82, 0.85), p(0.82, 0.18), p(0.18, 0.18)];
             painter.add(egui::Shape::closed_line(upright, Stroke::new(s.width * 0.6, color.linear_multiply(0.5))));
             let leaning = vec![p(0.18, 0.85), p(0.82, 0.85), p(0.68, 0.18), p(0.32, 0.18)];
-            painter.add(egui::Shape::convex_polygon(leaning, theme::ACCENT.linear_multiply(0.25), Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::convex_polygon(leaning, theme::accent().linear_multiply(0.25), Stroke::new(s.width, theme::accent())));
         }
         Icon::Axis => {
             // A dashed accent line across a cylinder outline.
             painter.circle_stroke(p(0.5, 0.5), rect.width() * 0.26, s);
-            let dash = Stroke::new(s.width * 1.3, theme::ACCENT);
+            let dash = Stroke::new(s.width * 1.3, theme::accent());
             painter.add(egui::Shape::dashed_line(&[p(0.12, 0.88), p(0.88, 0.12)], dash, rect.width() * 0.12, rect.width() * 0.07));
         }
         Icon::Midplane => {
@@ -299,7 +299,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             for (y, accent) in [(0.82, false), (0.52, true), (0.22, false)] {
                 let quad = vec![p(0.08, y), p(0.62, y), p(0.92, y - 0.16), p(0.38, y - 0.16)];
                 if accent {
-                    painter.add(egui::Shape::convex_polygon(quad, theme::ACCENT.linear_multiply(0.25), Stroke::new(s.width, theme::ACCENT)));
+                    painter.add(egui::Shape::convex_polygon(quad, theme::accent().linear_multiply(0.25), Stroke::new(s.width, theme::accent())));
                 } else {
                     painter.add(egui::Shape::convex_polygon(quad, fill, s));
                 }
@@ -343,12 +343,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let back = vec![p(0.40, 0.15), p(0.90, 0.15), p(0.90, 0.65), p(0.40, 0.65)];
             painter.add(egui::Shape::convex_polygon(back, fill, s));
             let cut = vec![p(0.10, 0.35), p(0.60, 0.35), p(0.60, 0.85), p(0.10, 0.85)];
-            painter.add(egui::Shape::convex_polygon(cut, theme::ACCENT.linear_multiply(0.30), Stroke::new(s.width, theme::ACCENT)));
+            painter.add(egui::Shape::convex_polygon(cut, theme::accent().linear_multiply(0.30), Stroke::new(s.width, theme::accent())));
         }
         Icon::Sweep => {
             // A circle swept along a bent path.
             let path = [p(0.20, 0.85), p(0.20, 0.45), p(0.30, 0.25), p(0.50, 0.18), p(0.85, 0.18)];
-            painter.line(path.to_vec(), Stroke::new(s.width, theme::ACCENT));
+            painter.line(path.to_vec(), Stroke::new(s.width, theme::accent()));
             painter.circle_stroke(p(0.20, 0.82), rect.width() * 0.13, s);
             painter.circle_stroke(p(0.82, 0.18), rect.width() * 0.13, s);
         }
@@ -378,7 +378,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             }
         }
         Icon::Mirror => {
-            painter.line_segment([p(0.5, 0.08), p(0.5, 0.92)], Stroke::new(s.width, theme::ACCENT));
+            painter.line_segment([p(0.5, 0.08), p(0.5, 0.92)], Stroke::new(s.width, theme::accent()));
             painter.add(egui::Shape::convex_polygon(vec![p(0.40, 0.25), p(0.40, 0.80), p(0.10, 0.80)], fill, s));
             painter.add(egui::Shape::convex_polygon(vec![p(0.60, 0.25), p(0.90, 0.80), p(0.60, 0.80)], fill, s));
         }
@@ -429,7 +429,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let end = *points.last().unwrap();
             painter.line(points, s);
             painter.arrow(end, Vec2::new(r * 0.45, -r * 0.1), s);
-            painter.line_segment([p(0.5, 0.12), p(0.5, 0.95)], Stroke::new(s.width * 0.8, theme::MUTED));
+            painter.line_segment([p(0.5, 0.12), p(0.5, 0.95)], Stroke::new(s.width * 0.8, theme::muted()));
         }
         Icon::Fillet => {
             // A block whose top-right corner is rounded; the round is highlighted.
@@ -442,14 +442,14 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 })
                 .collect();
             painter.line(vec![p(cx, 0.15), p(0.15, 0.15), p(0.15, 0.85), p(0.85, 0.85), p(0.85, cy)], s);
-            painter.line(arc, Stroke::new(s.width * 1.4, theme::ACCENT));
+            painter.line(arc, Stroke::new(s.width * 1.4, theme::accent()));
         }
         Icon::Chamfer => {
             painter.line(
                 vec![p(0.15, 0.15), p(0.15, 0.85), p(0.85, 0.85), p(0.85, 0.45)],
                 s,
             );
-            painter.line_segment([p(0.85, 0.45), p(0.55, 0.15)], Stroke::new(s.width * 1.4, theme::ACCENT));
+            painter.line_segment([p(0.85, 0.45), p(0.55, 0.15)], Stroke::new(s.width * 1.4, theme::accent()));
             painter.line_segment([p(0.55, 0.15), p(0.15, 0.15)], s);
         }
         Icon::ExportStl | Icon::ExportStep => {
@@ -462,7 +462,7 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 egui::Align2::CENTER_CENTER,
                 label,
                 egui::FontId::proportional(rect.height() * 0.26),
-                theme::ACCENT,
+                theme::accent(),
             );
         }
         Icon::Eye | Icon::EyeOff => {
@@ -496,8 +496,8 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
 pub fn button(ui: &mut egui::Ui, icon: Icon, size: f32, tooltip: &str) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), egui::Sense::click());
     if response.hovered() {
-        ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(222, 236, 248));
+        ui.painter().rect_filled(rect, 3.0, theme::palette().hover);
     }
-    paint(ui.painter(), rect.shrink(size * 0.12), icon, theme::ICON);
+    paint(ui.painter(), rect.shrink(size * 0.12), icon, theme::icon());
     response.on_hover_text(tooltip)
 }

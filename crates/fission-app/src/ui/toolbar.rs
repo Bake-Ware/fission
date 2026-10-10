@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, RichText, Stroke};
+use eframe::egui::{self, RichText, Stroke};
 use super::commands::{self, Command, Entry, Panel};
 use super::icons;
 use super::theme;
@@ -6,14 +6,14 @@ use crate::app::FissionApp;
 
 pub fn show(app: &mut FissionApp, ui: &mut egui::Ui) {
     egui::Panel::top("menu_bar")
-        .frame(egui::Frame::NONE.fill(theme::PANEL).inner_margin(egui::Margin::symmetric(6, 2)))
+        .frame(egui::Frame::NONE.fill(theme::panel()).inner_margin(egui::Margin::symmetric(6, 2)))
         .show(ui, |ui| menu_bar(app, ui));
 
     egui::Panel::top("toolbar")
         .frame(
             egui::Frame::NONE
-                .fill(theme::TOOLBAR)
-                .stroke(Stroke::new(1.0, theme::BORDER))
+                .fill(theme::toolbar())
+                .stroke(Stroke::new(1.0, theme::border()))
                 .inner_margin(egui::Margin { left: 8, right: 8, top: 2, bottom: 4 }),
         )
         .show(ui, |ui| if app.sketch.is_some() { sketch_tools(app, ui) } else { tools(app, ui) });
@@ -27,9 +27,9 @@ fn sketch_tools(app: &mut FissionApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.add_space(2.0);
-            ui.label(RichText::new("SKETCH").strong().color(theme::ACCENT).size(12.0));
+            ui.label(RichText::new("SKETCH").strong().color(theme::accent()).size(12.0));
             let (rect, _) = ui.allocate_exact_size(egui::vec2(46.0, 2.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 0.0, theme::ACCENT);
+            ui.painter().rect_filled(rect, 0.0, theme::accent());
         });
         ui.add_space(10.0);
 
@@ -40,11 +40,11 @@ fn sketch_tools(app: &mut FissionApp, ui: &mut egui::Ui) {
             };
             let (rect, response) = ui.allocate_exact_size(egui::vec2(34.0, 34.0), egui::Sense::click());
             if active == Some(tool) {
-                ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(200, 226, 246));
+                ui.painter().rect_filled(rect, 3.0, theme::palette().pressed);
             } else if response.hovered() {
-                ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(222, 236, 248));
+                ui.painter().rect_filled(rect, 3.0, theme::palette().hover);
             }
-            icons::paint(ui.painter(), rect.shrink(4.0), icon, theme::ICON);
+            icons::paint(ui.painter(), rect.shrink(4.0), icon, theme::icon());
             response.on_hover_text(tip).clicked()
         };
 
@@ -66,7 +66,7 @@ fn sketch_tools(app: &mut FissionApp, ui: &mut egui::Ui) {
             // The polygon's side count, while drawing one.
             if let Some(session) = app.sketch.as_mut().filter(|s| s.tool == Tool::Polygon) {
                 ui.vertical(|ui| {
-                    ui.label(RichText::new("Sides").size(10.0).color(theme::MUTED));
+                    ui.label(RichText::new("Sides").size(10.0).color(theme::muted()));
                     ui.add(egui::DragValue::new(&mut session.polygon_sides).range(3..=64).speed(0.1));
                 });
             }
@@ -162,9 +162,9 @@ fn sketch_tools(app: &mut FissionApp, ui: &mut egui::Ui) {
         caption_group(ui, "FINISH SKETCH", |ui| {
             let (rect, response) = ui.allocate_exact_size(egui::vec2(40.0, 34.0), egui::Sense::click());
             if response.hovered() {
-                ui.painter().rect_filled(rect, 3.0, Color32::from_rgb(222, 240, 226));
+                ui.painter().rect_filled(rect, 3.0, theme::palette().ok_hover);
             }
-            icons::paint(ui.painter(), rect.shrink(5.0), icons::Icon::FinishSketch, theme::ICON);
+            icons::paint(ui.painter(), rect.shrink(5.0), icons::Icon::FinishSketch, theme::icon());
             finish = response.on_hover_text("Finish Sketch (Ctrl+Enter)").clicked();
         });
 
@@ -189,7 +189,7 @@ fn caption_menu<T>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::U
     ui.vertical(|ui| {
         let width = ui.horizontal(add).response.rect.width();
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 12.0), egui::Sense::click());
-        let color = if response.hovered() { theme::ACCENT } else { theme::MUTED };
+        let color = if response.hovered() { theme::accent() } else { theme::muted() };
         let text = ui.painter().text(rect.center() - egui::vec2(4.0, 0.0), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(10.0), color);
         let (x, y) = (text.max.x + 4.0, rect.center().y);
         ui.painter().add(egui::Shape::convex_polygon(
@@ -211,7 +211,7 @@ fn caption_group(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui)
     ui.vertical(|ui| {
         let width = ui.horizontal(add).response.rect.width();
         let (rect, _) = ui.allocate_exact_size(egui::vec2(width, 12.0), egui::Sense::hover());
-        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(10.0), theme::MUTED);
+        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, label, egui::FontId::proportional(10.0), theme::muted());
     });
 }
 
@@ -281,14 +281,19 @@ fn menu_bar(app: &mut FissionApp, ui: &mut egui::Ui) {
                     }
                 }
             }
+            ui.separator();
+            let mut dark = theme::is_dark();
+            if ui.checkbox(&mut dark, "Dark Mode").clicked() {
+                theme::set_dark(ui.ctx(), dark);
+            }
         });
 
         // Document tab, centered-ish like Fusion's.
         ui.add_space(24.0);
         let dirty = if app.is_dirty() { " •" } else { "" };
         egui::Frame::NONE
-            .fill(Color32::WHITE)
-            .stroke(Stroke::new(1.0, theme::BORDER))
+            .fill(theme::palette().surface)
+            .stroke(Stroke::new(1.0, theme::border()))
             .corner_radius(egui::CornerRadius { nw: 4, ne: 4, sw: 0, se: 0 })
             .inner_margin(egui::Margin::symmetric(12, 2))
             .show(ui, |ui| {
@@ -302,9 +307,9 @@ fn tools(app: &mut FissionApp, ui: &mut egui::Ui) {
         // Workspace tab strip.
         ui.vertical(|ui| {
             ui.add_space(2.0);
-            ui.label(RichText::new("SOLID").strong().color(theme::ACCENT).size(12.0));
+            ui.label(RichText::new("SOLID").strong().color(theme::accent()).size(12.0));
             let (rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 2.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 0.0, theme::ACCENT);
+            ui.painter().rect_filled(rect, 0.0, theme::accent());
         });
         ui.add_space(10.0);
 
@@ -341,7 +346,7 @@ fn group(
 ) -> Option<Command> {
     ui.vertical(|ui| {
         // At least as wide as the caption and its chevron.
-        let caption = ui.painter().layout_no_wrap(panel.label.to_string(), egui::FontId::proportional(10.0), theme::MUTED);
+        let caption = ui.painter().layout_no_wrap(panel.label.to_string(), egui::FontId::proportional(10.0), theme::muted());
         let caption_w = caption.size().x + 16.0;
         let buttons = ui.horizontal(|ui| {
             let start = ui.cursor().min.x;
@@ -355,7 +360,7 @@ fn group(
         let mut clicked = buttons.inner;
         let width = buttons.response.rect.width().max(caption_w);
         let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 12.0), egui::Sense::click());
-        let color = if response.hovered() { theme::ACCENT } else { theme::MUTED };
+        let color = if response.hovered() { theme::accent() } else { theme::muted() };
         let text = ui.painter().text(
             rect.center() - egui::vec2(4.0, 0.0),
             egui::Align2::CENTER_CENTER,
@@ -421,5 +426,5 @@ fn tool(ui: &mut egui::Ui, cmd: Command) -> egui::Response {
 
 fn separator(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, 48.0), egui::Sense::hover());
-    ui.painter().vline(rect.center().x, rect.y_range(), Stroke::new(1.0, theme::BORDER));
+    ui.painter().vline(rect.center().x, rect.y_range(), Stroke::new(1.0, theme::border()));
 }

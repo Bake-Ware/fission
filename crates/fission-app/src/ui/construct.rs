@@ -171,7 +171,7 @@ pub fn draw_construction_points(app: &FissionApp, ui: &egui::Ui) {
     for (i, pos) in app.doc.construction_points() {
         if let Some(at) = app.viewport.to_screen(DVec3::from_array(pos).as_vec3()) {
             painter.circle(at, 3.5, Color32::from_rgb(210, 140, 50), Stroke::new(1.0, Color32::WHITE));
-            painter.text(at + egui::vec2(6.0, -4.0), egui::Align2::LEFT_BOTTOM, &app.doc.features[i].name, egui::FontId::proportional(12.0), theme::TEXT);
+            painter.text(at + egui::vec2(6.0, -4.0), egui::Align2::LEFT_BOTTOM, &app.doc.features[i].name, egui::FontId::proportional(12.0), theme::text());
         }
     }
 }
@@ -185,7 +185,7 @@ pub fn draw_construction_axes(app: &FissionApp, ui: &egui::Ui) {
         let ends = [o - d * half, o + d * half].map(|p| app.viewport.to_screen(p.as_vec3()));
         if let [Some(a), Some(b)] = ends {
             painter.add(egui::Shape::dashed_line(&[a, b], Stroke::new(1.5, Color32::from_rgb(210, 140, 50)), 8.0, 5.0));
-            painter.text(b, egui::Align2::LEFT_BOTTOM, &app.doc.features[i].name, egui::FontId::proportional(12.0), theme::TEXT);
+            painter.text(b, egui::Align2::LEFT_BOTTOM, &app.doc.features[i].name, egui::FontId::proportional(12.0), theme::text());
         }
     }
 }

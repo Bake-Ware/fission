@@ -10,12 +10,12 @@ pub fn show(app: &mut FissionApp, ui: &mut egui::Ui) {
         .default_size(220.0)
         .frame(
             egui::Frame::NONE
-                .fill(theme::PANEL)
-                .stroke(Stroke::new(1.0, theme::BORDER))
+                .fill(theme::panel())
+                .stroke(Stroke::new(1.0, theme::border()))
                 .inner_margin(egui::Margin::symmetric(8, 6)),
         )
         .show(ui, |ui| {
-            ui.label(RichText::new("BROWSER").small().strong().color(theme::MUTED));
+            ui.label(RichText::new("BROWSER").small().strong().color(theme::muted()));
             ui.add_space(2.0);
             egui::ScrollArea::vertical().show(ui, |ui| tree(app, ui));
         });
@@ -50,7 +50,7 @@ fn parts(app: &mut FissionApp, ui: &mut egui::Ui, feature: usize) {
                             toggle = Some(Some((p, !visible)));
                         }
                         let text = RichText::new(format!("Part {}", p + 1));
-                        ui.label(if visible { text } else { text.color(theme::MUTED) });
+                        ui.label(if visible { text } else { text.color(theme::muted()) });
                     });
                 }
                 match toggle {
@@ -78,7 +78,7 @@ fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
                     ui.label("Name");
                     ui.text_edit_singleline(&mut app.doc.name);
                 });
-                ui.label(RichText::new("Units: mm").color(theme::MUTED));
+                ui.label(RichText::new("Units: mm").color(theme::muted()));
             });
 
             egui::CollapsingHeader::new("Origin").id_salt("origin").show(ui, |ui| {
@@ -96,7 +96,7 @@ fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
                 .default_open(true)
                 .show(ui, |ui| {
                     if count == 0 {
-                        ui.label(RichText::new("No bodies").color(theme::MUTED));
+                        ui.label(RichText::new("No bodies").color(theme::muted()));
                     }
                     for i in 0..count {
                         ui.horizontal(|ui| {
@@ -106,7 +106,7 @@ fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
                                 app.set_body_visible(app.bodies[i].created_by, !visible);
                             }
                             let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
-                            icons::paint(ui.painter(), rect, Icon::Body, theme::ICON);
+                            icons::paint(ui.painter(), rect, Icon::Body, theme::icon());
                             let faces = app.bodies[i].mesh.face_ids.iter().max().map_or(0, |m| m + 1);
                             let selected = app.viewport.selection.iter().any(|p| p.body() == i);
                             let response = ui
@@ -139,10 +139,10 @@ fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
                         let selected = app.selected_feature == Some(i);
                         let mut text = RichText::new(&feature.name);
                         if i >= app.doc.marker || feature.suppressed {
-                            text = text.color(theme::MUTED);
+                            text = text.color(theme::muted());
                         }
                         if matches!(app.status.get(i), Some(fission_model::FeatureStatus::Error(_))) {
-                            text = text.color(theme::ERROR);
+                            text = text.color(theme::error());
                         }
                         let response = ui.selectable_label(selected, text);
                         if response.clicked() {

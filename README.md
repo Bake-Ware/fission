@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/img/icon.png" alt="Fission icon" width="96">
+</p>
+
+<p align="center">
   <img alt="Rust" src="https://img.shields.io/badge/100%25-Rust-f74c00?style=for-the-badge&logo=rust&logoColor=white">
   <img alt="Kernel" src="https://img.shields.io/badge/kernel-OpenCascade%207.8-1d6cff?style=for-the-badge">
   <img alt="GPU" src="https://img.shields.io/badge/render-wgpu-7c8cff?style=for-the-badge">
@@ -39,6 +43,21 @@ Desktop CAD was designed for a person with a mouse. Agents now write code, run t
 > **Built with agents, for agents.** Fission was developed largely by an AI coding agent. The agent wrote the code, decoded the `.f3d` file format from sample files, tested the app by driving its real UI over remote HID input, sliced the exported STLs in a slicer, and checked volumes against Fusion's own saved bodies. Every design decision above came out of what that loop needed.
 
 ---
+
+## 🌗 Light or dark
+
+<table>
+<tr>
+<td width="50%"><img src="docs/img/hero.png" alt="Light mode"></td>
+<td width="50%"><img src="docs/img/dark-hero.png" alt="Dark mode"></td>
+</tr>
+<tr>
+<td><img src="docs/img/dark-sketch.png" alt="Dark mode sketch"></td>
+<td><img src="docs/img/dark-fillet.png" alt="Dark mode fillet dialog"></td>
+</tr>
+</table>
+
+Switch with **View ▸ Dark Mode**. The choice is saved in `~/.config/fission/theme`. Without a saved choice, Fission follows the system theme when the platform reports one. `FISSION_THEME=dark` or `light` overrides both for one run, which is handy for screenshots.
 
 ## 🖼️ Tour
 
@@ -262,6 +281,7 @@ Commands (hotkeys follow Fusion):
   Section Analysis cuts the view on an origin plane at a distance (flip to
   keep the other side) and fills the cut solids with a hatched cap; picking
   ignores what's cut away.
+- **View ▸ Dark Mode** switches the whole UI and viewport between light and dark (remembered between runs).
 - **Appearance** (`A`, MODIFY ▸ Appearance, or right-click a body in the
   browser): finish swatches or a custom color for the selected bodies.
 - **Parameters** (MODIFY ▸ Change Parameters): named values like

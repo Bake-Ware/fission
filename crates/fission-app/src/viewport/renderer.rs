@@ -18,6 +18,10 @@ struct Globals {
     ids: [u32; 16],
     bodies: [u32; 4],
     clip: [f32; 4],
+    // Background gradient top and bottom; theme.x is 1 in dark mode.
+    bg_top: [f32; 4],
+    bg_bottom: [f32; 4],
+    theme: [f32; 4],
     colors: [[f32; 4]; 32],
 }
 
@@ -284,6 +288,9 @@ impl ViewportRenderer {
             },
             bodies: [frame.body_mask, 0, 0, 0],
             clip: frame.clip.map_or([0.0; 4], |c| c.to_array()),
+            bg_top: { let p = crate::ui::theme::palette(); [p.bg_top[0], p.bg_top[1], p.bg_top[2], 1.0] },
+            bg_bottom: { let p = crate::ui::theme::palette(); [p.bg_bottom[0], p.bg_bottom[1], p.bg_bottom[2], 1.0] },
+            theme: [if crate::ui::theme::is_dark() { 1.0 } else { 0.0 }, 0.0, 0.0, 0.0],
             colors: {
                 let mut colors = [[0.0f32; 4]; 32];
                 for (slot, c) in colors.iter_mut().zip(&frame.colors) {
