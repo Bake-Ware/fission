@@ -40,6 +40,37 @@ pub struct LineVertex {
     pub color: [f32; 4],
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct CanvasVertex {
+    pos: [f32; 3],
+    uv: [f32; 2],
+    opacity: f32,
+}
+
+/// A reference image to draw: its decoded pixels and where its corners go
+/// (bottom-left, bottom-right, top-right, top-left) with their image coords.
+pub struct CanvasDraw<'a> {
+    /// Identifies the image, so it is uploaded once.
+    pub key: &'a str,
+    pub image: &'a CanvasImage,
+    pub corners: [[f32; 3]; 4],
+    pub uv: [[f32; 2]; 4],
+    pub opacity: f32,
+}
+
+/// Decoded RGBA8 pixels.
+pub struct CanvasImage {
+    pub size: [u32; 2],
+    pub rgba: Vec<u8>,
+}
+
+struct CanvasGpu {
+    key: String,
+    bind_group: wgpu::BindGroup,
+    vertices: wgpu::Buffer,
+}
+
 pub struct Frame {
     pub view_proj: Mat4,
     pub eye: Vec3,
@@ -76,6 +107,12 @@ pub struct ViewportRenderer {
     background: wgpu::RenderPipeline,
     faces_pipeline: wgpu::RenderPipeline,
     lines_pipeline: wgpu::RenderPipeline,
+    canvas_pipeline: wgpu::RenderPipeline,
+    canvas_layout: wgpu::BindGroupLayout,
+    canvas_sampler: wgpu::Sampler,
+    /// Uploaded images by key; reused across frames.
+    canvas_textures: Vec<(String, wgpu::TextureView)>,
+    canvases: Vec<CanvasGpu>,
     targets: Option<Targets>,
     texture_id: Option<eframe::egui::TextureId>,
     faces: Option<Geometry>,
@@ -203,12 +240,82 @@ impl ViewportRenderer {
             Some(wgpu::BlendState::ALPHA_BLENDING),
         );
 
+        // Canvases: their own layout, adding the image at group 1.
+        let canvas_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("canvas"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let canvas_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("canvas"),
+            bind_group_layouts: &[Some(&layout), Some(&canvas_layout)],
+            immediate_size: 0,
+        });
+        let canvas_attrs = wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32];
+        let canvas_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("canvas"),
+            layout: Some(&canvas_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("canvas_vs"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<CanvasVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &canvas_attrs,
+                })],
+            },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            // Hidden by bodies in front, but doesn't hide them: they show through.
+            depth_stencil: Some(depth(false, wgpu::CompareFunction::LessEqual, Default::default())),
+            multisample: wgpu::MultisampleState { count: SAMPLES, ..Default::default() },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("canvas_fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: COLOR_FORMAT,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let canvas_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("canvas"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+
         let mut renderer = ViewportRenderer {
             globals,
             bind_group,
             background,
             faces_pipeline,
             lines_pipeline,
+            canvas_pipeline,
+            canvas_layout,
+            canvas_sampler,
+            canvas_textures: Vec::new(),
+            canvases: Vec::new(),
             targets: None,
             texture_id: None,
             faces: None,
@@ -266,6 +373,55 @@ impl ViewportRenderer {
             count: indices.len() as u32,
         });
         self.edges = line_geometry(device, &edges);
+    }
+
+    /// Set the reference images to draw. Images are uploaded the first time
+    /// their key is seen.
+    pub fn set_canvases(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, canvases: &[CanvasDraw]) {
+        self.canvases.clear();
+        for c in canvases {
+            if !self.canvas_textures.iter().any(|(k, _)| k == c.key) {
+                let [w, h] = c.image.size;
+                let extent = wgpu::Extent3d { width: w.max(1), height: h.max(1), depth_or_array_layers: 1 };
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("canvas image"),
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                queue.write_texture(
+                    texture.as_image_copy(),
+                    &c.image.rgba,
+                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * w), rows_per_image: Some(h) },
+                    extent,
+                );
+                self.canvas_textures.push((c.key.to_string(), texture.create_view(&Default::default())));
+            }
+            let view = &self.canvas_textures.iter().find(|(k, _)| k == c.key).unwrap().1;
+            let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("canvas"),
+                layout: &self.canvas_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
+                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(&self.canvas_sampler) },
+                ],
+            });
+            let v = |i: usize| CanvasVertex { pos: c.corners[i], uv: c.uv[i], opacity: c.opacity };
+            let quad = [v(0), v(1), v(2), v(0), v(2), v(3)];
+            let vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("canvas"),
+                contents: bytemuck::cast_slice(&quad),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            self.canvases.push(CanvasGpu { key: c.key.to_string(), bind_group, vertices });
+        }
+        // Forget images no canvas uses any more.
+        let used: Vec<&str> = self.canvases.iter().map(|c| c.key.as_str()).collect();
+        self.canvas_textures.retain(|(k, _)| used.contains(&k.as_str()));
     }
 
     /// Render a frame at `size` physical pixels and return the egui texture showing it.
@@ -382,6 +538,16 @@ impl ViewportRenderer {
             for lines in [&self.grid, &self.edges].into_iter().flatten() {
                 pass.set_vertex_buffer(0, lines.vertices.slice(..));
                 pass.draw(0..lines.count, 0..1);
+            }
+
+            // After everything opaque, so bodies behind show through.
+            if !self.canvases.is_empty() {
+                pass.set_pipeline(&self.canvas_pipeline);
+                for c in &self.canvases {
+                    pass.set_bind_group(1, &c.bind_group, &[]);
+                    pass.set_vertex_buffer(0, c.vertices.slice(..));
+                    pass.draw(0..6, 0..1);
+                }
             }
         }
         queue.submit([encoder.finish()]);

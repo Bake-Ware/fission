@@ -27,6 +27,7 @@ pub enum Icon {
     Move,
     Joint,
     Interference,
+    Canvas,
     Mirror,
     PatternRect,
     PatternCirc,
@@ -192,6 +193,16 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 })
                 .collect();
             painter.add(egui::Shape::dashed_line(&arc, Stroke::new(s.width * 0.8, color), 2.0, 1.5));
+        }
+        Icon::Canvas => {
+            // A framed picture: mountains and a sun.
+            let r = Rect::from_min_max(p(0.10, 0.18), p(0.90, 0.82));
+            painter.rect_filled(r, 2.0, fill);
+            painter.rect_stroke(r, 2.0, s, egui::StrokeKind::Middle);
+            let hills = vec![p(0.14, 0.78), p(0.38, 0.46), p(0.54, 0.64), p(0.66, 0.52), p(0.86, 0.78)];
+            painter.add(egui::Shape::convex_polygon(vec![hills[0], hills[1], hills[2], p(0.54, 0.78)], theme::accent().linear_multiply(0.6), Stroke::NONE));
+            painter.add(egui::Shape::convex_polygon(vec![p(0.48, 0.78), hills[2], hills[3], hills[4]], theme::accent().linear_multiply(0.35), Stroke::NONE));
+            painter.circle_filled(p(0.70, 0.34), rect.width() * 0.07, theme::accent());
         }
         Icon::Interference => {
             // Two overlapping boxes with the shared part filled red.

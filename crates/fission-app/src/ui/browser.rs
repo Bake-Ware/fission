@@ -68,6 +68,35 @@ fn parts(app: &mut FissionApp, ui: &mut egui::Ui, feature: usize) {
     });
 }
 
+/// Reference images, each with its visibility.
+fn canvases(app: &mut FissionApp, ui: &mut egui::Ui) {
+    let canvases = app.doc.canvases();
+    if canvases.is_empty() {
+        return;
+    }
+    egui::CollapsingHeader::new(format!("Canvases ({})", canvases.len())).id_salt("canvases").default_open(true).show(ui, |ui| {
+        for c in canvases {
+            ui.horizontal(|ui| {
+                let visible = !app.hidden.contains(&c.feature);
+                let eye = if visible { Icon::Eye } else { Icon::EyeOff };
+                if icons::button(ui, eye, 18.0, if visible { "Hide" } else { "Show" }).clicked() {
+                    app.set_body_visible(c.feature, !visible);
+                }
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                icons::paint(ui.painter(), rect, Icon::Canvas, theme::icon());
+                let name = app.doc.features[c.feature].name.clone();
+                let response = ui.selectable_label(app.selected_feature == Some(c.feature), name);
+                if response.clicked() {
+                    app.selected_feature = Some(c.feature);
+                }
+                if response.double_clicked() {
+                    app.begin_edit(c.feature);
+                }
+            });
+        }
+    });
+}
+
 /// A slider per joint: dragging moves its bodies live, releasing keeps the
 /// value. The play button swings it between its limits.
 fn joints(app: &mut FissionApp, ui: &mut egui::Ui) {
@@ -182,6 +211,7 @@ fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
                     }
                 });
 
+            canvases(app, ui);
             joints(app, ui);
 
             egui::CollapsingHeader::new(format!("Features ({})", app.doc.features.len()))

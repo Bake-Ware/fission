@@ -723,3 +723,57 @@ fn rigid_rotation_about_an_offset_axis() {
     let s = Rigid::joint(JointMotion::Slider, [0.0; 3], [0.0, 1.0, 0.0], 4.0);
     assert_eq!(s.point([1.0, 1.0, 1.0]), [1.0, 5.0, 1.0]);
 }
+
+#[test]
+fn canvas_places_its_cropped_corners_on_the_plane() {
+    let mut doc = Document::default();
+    doc.push(FeatureKind::Canvas {
+        path: "ref.png".into(),
+        plane: OriginPlane::XZ,
+        offset: 0.0,
+        center: [10.0, 5.0],
+        size: [40.0, 20.0],
+        rotation: 0.0,
+        crop: [0.25, 0.0, 0.75, 0.5],
+        opacity: 0.5,
+    });
+    let r = doc.regenerate(&Fake);
+    assert_eq!(r.status, vec![FeatureStatus::Ok]);
+    assert!(r.bodies.is_empty(), "a canvas makes no body");
+    let c = &doc.canvases()[0];
+    let xz = OriginPlane::XZ.plane(0.0);
+    assert_eq!(c.corners[0], xz.to_world([-10.0, -5.0]));
+    assert_eq!(c.corners[2], xz.to_world([30.0, 15.0]));
+    assert_eq!(c.uv[0], [0.25, 0.5], "bottom-left shows the crop's left edge, bottom edge");
+    assert_eq!(c.uv[2], [0.75, 0.0]);
+
+    let back = Document::from_ron(&doc.to_ron().unwrap()).unwrap();
+    assert_eq!(back, doc);
+    let minimal = r#"(name: "c", features: [(name: "Canvas1", kind: Canvas(path: "a.jpg", plane: XY, size: (10.0, 10.0)))], marker: 1)"#;
+    let FeatureKind::Canvas { crop, opacity, .. } = Document::from_ron(minimal).unwrap().features[0].kind.clone() else { panic!() };
+    assert_eq!((crop, opacity), ([0.0, 0.0, 1.0, 1.0], 0.5), "defaults: whole image, half opacity");
+}
+
+#[test]
+fn recropping_a_canvas_trims_without_moving_or_stretching() {
+    let mut kind = FeatureKind::Canvas {
+        path: "a.png".into(),
+        plane: OriginPlane::XY,
+        offset: 0.0,
+        center: [0.0, 0.0],
+        size: [100.0, 50.0],
+        rotation: 0.0,
+        crop: [0.0, 0.0, 1.0, 1.0],
+        opacity: 0.5,
+    };
+    // Keep the right half and the top half.
+    recrop_canvas(&mut kind, [0.5, 0.0, 1.0, 0.5]);
+    let FeatureKind::Canvas { center, size, crop, .. } = &kind else { panic!() };
+    assert_eq!(*size, [50.0, 25.0]);
+    assert_eq!(*center, [25.0, 12.5], "the right/top quarter stays where it was");
+    assert_eq!(*crop, [0.5, 0.0, 1.0, 0.5]);
+    // Crop edges can't cross.
+    recrop_canvas(&mut kind, [0.9, 0.4, 0.2, 0.1]);
+    let FeatureKind::Canvas { crop, .. } = &kind else { panic!() };
+    assert!(crop[2] > crop[0] && crop[3] > crop[1], "{crop:?}");
+}

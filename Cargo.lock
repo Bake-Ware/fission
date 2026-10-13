@@ -950,6 +950,7 @@ dependencies = [
  "fission-occt",
  "flate2",
  "glam 0.33.12",
+ "image",
  "log",
  "pollster 0.4.0",
  "postcard",
@@ -1350,6 +1351,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

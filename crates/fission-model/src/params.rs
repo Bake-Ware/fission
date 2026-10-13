@@ -81,6 +81,10 @@ impl FeatureKind {
                 let [x, y, z] = translate;
                 vec![("x", "X distance", Length, x), ("y", "Y distance", Length, y), ("z", "Z distance", Length, z), ("degrees", "Angle", Angle, degrees)]
             }
+            FeatureKind::Canvas { offset, size, rotation, .. } => {
+                let [w, h] = size;
+                vec![("width", "Width", Length, w), ("height", "Height", Length, h), ("rotation", "Rotation", Angle, rotation), ("offset", "Plane offset", Length, offset)]
+            }
             FeatureKind::Joint { motion, value, min, max, .. } => {
                 let q = if *motion == crate::JointMotion::Revolute { Angle } else { Length };
                 vec![("value", "Value", q, value), ("min", "Minimum", q, min), ("max", "Maximum", q, max)]

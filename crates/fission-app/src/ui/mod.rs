@@ -1,5 +1,6 @@
 pub mod browser;
 pub mod appearance;
+pub mod canvas;
 pub mod commands;
 pub mod construct;
 pub mod dialog;

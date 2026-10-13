@@ -31,6 +31,7 @@ pub fn icon_for(kind: &FeatureKind) -> Icon {
         FeatureKind::Combine { .. } => Icon::Combine,
         FeatureKind::Move { .. } => Icon::Move,
         FeatureKind::Joint { .. } => Icon::Joint,
+        FeatureKind::Canvas { .. } => Icon::Canvas,
         FeatureKind::Mirror { .. } => Icon::Mirror,
         FeatureKind::Scale { .. } => Icon::Scale,
         FeatureKind::Split { .. } => Icon::Split,

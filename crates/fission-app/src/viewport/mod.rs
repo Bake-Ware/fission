@@ -10,7 +10,7 @@ use eframe::egui_wgpu::RenderState;
 use fission_kernel::Mesh;
 use glam::{Vec2, Vec3, Vec4Swizzles};
 
-pub use renderer::{Frame, ViewportRenderer};
+pub use renderer::{CanvasImage, Frame, ViewportRenderer};
 use crate::ui::theme;
 
 /// One body's display data.
@@ -20,6 +20,15 @@ pub struct DisplayBody {
     pub visible: bool,
     /// Index of the feature that created the body (its stable identity).
     pub created_by: usize,
+}
+
+/// A reference image to draw, with its corners already placed.
+pub struct CanvasEntry {
+    pub key: String,
+    pub image: std::sync::Arc<CanvasImage>,
+    pub corners: [[f32; 3]; 4],
+    pub uv: [[f32; 2]; 4],
+    pub opacity: f32,
 }
 
 /// Entities an open dialog has picked, by display body index.
@@ -67,6 +76,8 @@ pub struct Viewport {
     /// Appearance per display body (alpha 0 = default).
     pub body_colors: Vec<[f32; 4]>,
     grid_built: Option<(fission_kernel::Plane, f64)>,
+    canvases: Vec<CanvasEntry>,
+    canvases_dirty: bool,
 }
 
 impl Viewport {
@@ -84,7 +95,15 @@ impl Viewport {
             grid_built: None,
             section: None,
             body_colors: Vec::new(),
+            canvases: Vec::new(),
+            canvases_dirty: false,
         }
+    }
+
+    /// Reference images to show from now on.
+    pub fn set_canvases(&mut self, canvases: Vec<CanvasEntry>) {
+        self.canvases = canvases;
+        self.canvases_dirty = true;
     }
 
     /// Mark meshes for re-upload and drop selected entities that no longer exist.
@@ -169,6 +188,15 @@ impl Viewport {
             let visible = bodies.iter().enumerate().filter(|(_, b)| b.visible).map(|(i, b)| (i, &b.mesh));
             self.renderer.set_meshes(&rs.device, visible);
             self.meshes_dirty = false;
+        }
+        if self.canvases_dirty {
+            let draws: Vec<renderer::CanvasDraw> = self
+                .canvases
+                .iter()
+                .map(|c| renderer::CanvasDraw { key: &c.key, image: &c.image, corners: c.corners, uv: c.uv, opacity: c.opacity })
+                .collect();
+            self.renderer.set_canvases(&rs.device, &rs.queue, &draws);
+            self.canvases_dirty = false;
         }
         if self.grid_built != Some(self.grid) {
             let (plane, spacing) = self.grid;

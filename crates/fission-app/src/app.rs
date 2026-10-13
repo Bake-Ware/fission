@@ -82,6 +82,8 @@ pub struct FissionApp {
     pub hud: Option<ui::hud::Hud>,
     /// A joint being scrubbed or played (display only, until committed).
     pub joint_preview: Option<crate::motion::JointPreview>,
+    /// Decoded reference images, by path.
+    pub canvas_store: ui::canvas::CanvasStore,
 }
 
 impl FissionApp {
@@ -122,6 +124,7 @@ impl FissionApp {
             picking_sketch_plane: false,
             hud: None,
             joint_preview: None,
+            canvas_store: Default::default(),
         };
         if let Some(path) = path {
             app.open_path(&path);
@@ -313,6 +316,8 @@ impl FissionApp {
                         Err(e) => log::warn!("{e}"),
                     }
                 }
+                // Insert a reference image: `canvas:<path>`.
+                ("canvas", _) => self.insert_canvas(Path::new(arg)),
                 ("view", _) => {
                     use crate::viewport::StandardView::*;
                     let view = match arg {
@@ -395,6 +400,7 @@ impl FissionApp {
         self.regen_ms = start.elapsed().as_secs_f32() * 1000.0;
         // New meshes replace any joint preview's.
         self.joint_preview = None;
+        self.refresh_canvases();
         self.viewport.bodies_changed(&self.bodies);
         if self.first_regen {
             self.viewport.fit_all(&self.bodies);
@@ -413,6 +419,7 @@ impl FissionApp {
             body.visible = visible;
         }
         self.viewport.bodies_changed(&self.bodies);
+        self.refresh_canvases();
     }
 
     /// Sketches that are applied, unsuppressed, and not yet used by a later
@@ -1884,7 +1891,7 @@ fn hole_placement(hit: &crate::viewport::Hit) -> (OriginPlane, f64, [f64; 2], bo
 /// The plane through `p` with normal `n`: an origin plane and offset when
 /// `n` is along an axis, else its own plane with X as level as possible.
 /// The third value is +1 or -1: whether `n` points along the plane's normal.
-fn plane_through(p: glam::DVec3, n: glam::DVec3) -> (OriginPlane, f64, f64) {
+pub(crate) fn plane_through(p: glam::DVec3, n: glam::DVec3) -> (OriginPlane, f64, f64) {
     let aligned = |v: f64| v.abs() > 0.999;
     let (plane, offset, along) = if aligned(n.z) {
         (OriginPlane::XY, p.z, n.z)

@@ -432,6 +432,26 @@ pub enum FeatureKind {
     Torus { plane: OriginPlane, offset: f64, center: [f64; 2], diameter: f64, section: f64, operation: Operation },
     /// A construction point. Makes no body.
     Point { pos: [f64; 3] },
+    /// A reference image on a plane (Fusion's Canvas), for tracing over.
+    /// Makes no body. `crop` keeps that part of the image (left, top,
+    /// right, bottom as fractions of its width and height), shown `size` mm
+    /// across (width and height scale independently), centred on `center`,
+    /// turned `rotation` degrees in the plane.
+    Canvas {
+        path: String,
+        plane: OriginPlane,
+        #[serde(default)]
+        offset: f64,
+        #[serde(default)]
+        center: [f64; 2],
+        size: [f64; 2],
+        #[serde(default)]
+        rotation: f64,
+        #[serde(default = "full_crop")]
+        crop: [f64; 4],
+        #[serde(default = "half")]
+        opacity: f64,
+    },
     /// A feature from another program's timeline that Fission can't replay
     /// yet (Fusion's name for it, and why). It does nothing and shows as an
     /// error, so the imported timeline stays complete.
@@ -605,6 +625,57 @@ impl JointInfo {
     }
 }
 
+fn full_crop() -> [f64; 4] {
+    [0.0, 0.0, 1.0, 1.0]
+}
+
+fn half() -> f64 {
+    0.5
+}
+
+/// A canvas as the viewport draws it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasInfo {
+    pub feature: usize,
+    pub path: String,
+    /// Corners in model space: bottom-left, bottom-right, top-right, top-left.
+    pub corners: [[f64; 3]; 4],
+    /// Image coordinates (0..1, y down) of the same corners.
+    pub uv: [[f64; 2]; 4],
+    pub opacity: f64,
+}
+
+/// Change a canvas's crop, keeping what stays visible the same size and in
+/// the same place on its plane (cropping trims the picture; it doesn't
+/// stretch it). Crop edges are clamped to the image and kept in order.
+pub fn recrop_canvas(kind: &mut FeatureKind, crop: [f64; 4]) {
+    let FeatureKind::Canvas { center, size, rotation, crop: old, .. } = kind else { return };
+    let min = 0.01;
+    let mut c = crop.map(|v| v.clamp(0.0, 1.0));
+    if c[2] - c[0] < min {
+        c[2] = (c[0] + min).min(1.0);
+        c[0] = c[2] - min;
+    }
+    if c[3] - c[1] < min {
+        c[3] = (c[1] + min).min(1.0);
+        c[1] = c[3] - min;
+    }
+    let (ow, oh) = (old[2] - old[0], old[3] - old[1]);
+    if ow <= 0.0 || oh <= 0.0 {
+        *old = c;
+        return;
+    }
+    // mm per image unit along the canvas's own x and y.
+    let (sx, sy) = (size[0] / ow, size[1] / oh);
+    let dx = ((c[0] + c[2]) - (old[0] + old[2])) / 2.0 * sx;
+    let dy = -((c[1] + c[3]) - (old[1] + old[3])) / 2.0 * sy; // image y runs down
+    let (s, co) = rotation.to_radians().sin_cos();
+    center[0] += dx * co - dy * s;
+    center[1] += dx * s + dy * co;
+    *size = [(c[2] - c[0]) * sx, (c[3] - c[1]) * sy];
+    *old = c;
+}
+
 /// A sketch region, by a point inside it.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Section {
@@ -728,6 +799,7 @@ impl FeatureKind {
             FeatureKind::Plane { .. } => "Plane",
             FeatureKind::Axis { .. } => "Axis",
             FeatureKind::Point { .. } => "Point",
+            FeatureKind::Canvas { .. } => "Canvas",
             FeatureKind::Unsupported { .. } => "Unsupported",
             FeatureKind::Sphere { .. } => "Sphere",
             FeatureKind::Torus { .. } => "Torus",
@@ -964,6 +1036,30 @@ impl Document {
             .collect()
     }
 
+    /// Canvases that are applied and unsuppressed, with their corners placed.
+    pub fn canvases(&self) -> Vec<CanvasInfo> {
+        let mut out = Vec::new();
+        for (i, f) in self.features.iter().enumerate().take(self.marker) {
+            let FeatureKind::Canvas { path, plane, offset, center, size, rotation, crop, opacity } = &f.kind else { continue };
+            if f.suppressed {
+                continue;
+            }
+            let p = plane.plane(*offset);
+            let (s, c) = rotation.to_radians().sin_cos();
+            let (hw, hh) = (size[0] / 2.0, size[1] / 2.0);
+            let at = |x: f64, y: f64| p.to_world([center[0] + x * c - y * s, center[1] + x * s + y * c]);
+            let [l, t, r, b] = *crop;
+            out.push(CanvasInfo {
+                feature: i,
+                path: path.clone(),
+                corners: [at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh)],
+                uv: [[l, b], [r, b], [r, t], [l, t]],
+                opacity: opacity.clamp(0.0, 1.0),
+            });
+        }
+        out
+    }
+
     /// Joints that are applied and unsuppressed, in timeline order. A joint
     /// with no bodies listed moves the last body before it, as regeneration
     /// does; `bodies` says which (by creating feature).
@@ -1095,7 +1191,7 @@ impl Document {
                 status.push(FeatureStatus::Suppressed);
                 continue;
             }
-            if let FeatureKind::Plane { .. } | FeatureKind::Axis { .. } | FeatureKind::Point { .. } = &feature.kind {
+            if let FeatureKind::Plane { .. } | FeatureKind::Axis { .. } | FeatureKind::Point { .. } | FeatureKind::Canvas { .. } = &feature.kind {
                 status.push(FeatureStatus::Ok);
                 continue;
             }
@@ -1256,7 +1352,12 @@ fn apply<K: Kernel>(
             };
             combine(kernel, bodies, tool, *operation, target, index)
         }
-        FeatureKind::Sketch { .. } | FeatureKind::Plane { .. } | FeatureKind::Axis { .. } | FeatureKind::Point { .. } | FeatureKind::Unsupported { .. } => {
+        FeatureKind::Sketch { .. }
+        | FeatureKind::Plane { .. }
+        | FeatureKind::Axis { .. }
+        | FeatureKind::Point { .. }
+        | FeatureKind::Canvas { .. }
+        | FeatureKind::Unsupported { .. } => {
             unreachable!("handled in regenerate")
         }
         FeatureKind::Thread { face, pitch, left_hand, .. } => {

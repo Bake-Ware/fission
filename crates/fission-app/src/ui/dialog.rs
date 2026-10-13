@@ -76,6 +76,11 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: Rect) {
                 }
             });
 
+            if matches!(app.doc.features.get(index).map(|f| &f.kind), Some(FeatureKind::Canvas { .. })) {
+                ui.add_space(4.0);
+                changed |= super::canvas::crop_editor(app, ui, index);
+            }
+
             if let Some(FeatureStatus::Error(message)) = app.status.get(index) {
                 ui.add_space(4.0);
                 ui.label(RichText::new(format!("⚠ {message}")).color(theme::error()));
@@ -383,6 +388,56 @@ fn fields(
             ui.end_row();
             ui.label("");
             changed |= ui.checkbox(copy, "Create copy").changed();
+            ui.end_row();
+        }
+        FeatureKind::Canvas { plane, offset, center, size, rotation, opacity, .. } => {
+            ui.label("Plane");
+            egui::ComboBox::from_id_salt("canvas_plane").selected_text(plane.label()).show_ui(ui, |ui| {
+                for p in OriginPlane::ALL {
+                    changed |= ui.selectable_value(plane, p, p.label()).changed();
+                }
+            });
+            ui.end_row();
+            ui.label("Plane offset");
+            changed |= length(ui, offset, None);
+            ui.end_row();
+            ui.label("Center");
+            ui.horizontal(|ui| {
+                changed |= length(ui, &mut center[0], None);
+                changed |= length(ui, &mut center[1], None);
+            });
+            ui.end_row();
+            // Width and height scale independently unless locked together.
+            let lock_id = egui::Id::new("canvas_lock_aspect");
+            let mut lock = ui.data(|d| d.get_temp::<bool>(lock_id)).unwrap_or(true);
+            let before = *size;
+            ui.label("Width");
+            changed |= length(ui, &mut size[0], Some(0.01));
+            ui.end_row();
+            ui.label("Height");
+            changed |= length(ui, &mut size[1], Some(0.01));
+            ui.end_row();
+            if lock && before[0] > 0.0 && before[1] > 0.0 {
+                if size[0] != before[0] {
+                    size[1] = before[1] * size[0] / before[0];
+                } else if size[1] != before[1] {
+                    size[0] = before[0] * size[1] / before[1];
+                }
+            }
+            ui.label("");
+            if ui.checkbox(&mut lock, "Keep proportions").on_hover_text("Off: scale width and height separately").changed() {
+                ui.data_mut(|d| d.insert_temp(lock_id, lock));
+            }
+            ui.end_row();
+            ui.label("Rotation");
+            changed |= ui.add(egui::DragValue::new(rotation).speed(0.5).range(-360.0..=360.0).suffix(" deg")).changed();
+            ui.end_row();
+            ui.label("Opacity");
+            let mut percent = *opacity * 100.0;
+            if ui.add(egui::Slider::new(&mut percent, 0.0..=100.0).suffix("%").max_decimals(0)).changed() {
+                *opacity = percent / 100.0;
+                changed = true;
+            }
             ui.end_row();
         }
         FeatureKind::Joint { bodies, motion, axis, value, min, max } => {

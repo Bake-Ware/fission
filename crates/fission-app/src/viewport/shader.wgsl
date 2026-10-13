@@ -158,3 +158,40 @@ fn line_fs(in: LineOut) -> @location(0) vec4<f32> {
     }
     return in.color;
 }
+
+// ---- canvases: reference images on planes ----
+
+@group(1) @binding(0) var canvas_tex: texture_2d<f32>;
+@group(1) @binding(1) var canvas_sampler: sampler;
+
+struct CanvasIn {
+    @location(0) pos: vec3<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) opacity: f32,
+};
+
+struct CanvasOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) opacity: f32,
+    @location(2) world: vec3<f32>,
+};
+
+@vertex
+fn canvas_vs(in: CanvasIn) -> CanvasOut {
+    var out: CanvasOut;
+    out.clip = globals.view_proj * vec4<f32>(in.pos, 1.0);
+    out.uv = in.uv;
+    out.opacity = in.opacity;
+    out.world = in.pos;
+    return out;
+}
+
+@fragment
+fn canvas_fs(in: CanvasOut) -> @location(0) vec4<f32> {
+    if (is_clipped(in.world)) {
+        discard;
+    }
+    let c = textureSample(canvas_tex, canvas_sampler, in.uv);
+    return vec4<f32>(c.rgb, c.a * in.opacity);
+}
