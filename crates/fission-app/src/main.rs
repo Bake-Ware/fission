@@ -103,10 +103,13 @@ fn install_desktop() -> ExitCode {
     let icon_path = home.join(".local/share/icons/hicolor/256x256/apps/fission.png");
     let desktop_path = home.join(".local/share/applications/fission.desktop");
     let desktop = format!(
-        "[Desktop Entry]\nType=Application\nName=Fission\nComment=Parametric CAD\nExec={} %f\nIcon=fission\n\
+        "[Desktop Entry]\nType=Application\nName=Fission\nComment=Parametric CAD\nExec={} %f\nIcon={}\n\
          Terminal=false\nCategories=Graphics;Engineering;3DGraphics;\nMimeType=application/x-fission;\n\
          StartupWMClass=fission\n",
-        exe.display()
+        exe.display(),
+        // A path, not a theme name: desktops cache name lookups until
+        // re-login, so a new icon under the old name wouldn't show.
+        icon_path.display()
     );
     let result = (|| -> std::io::Result<()> {
         // Earlier versions wrote a 64 px icon that would shadow this one.
