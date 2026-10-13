@@ -10,7 +10,7 @@ use eframe::egui_wgpu::RenderState;
 use fission_kernel::Mesh;
 use glam::{Vec2, Vec3, Vec4Swizzles};
 
-use renderer::{Frame, ViewportRenderer};
+pub use renderer::{Frame, ViewportRenderer};
 use crate::ui::theme;
 
 /// One body's display data.
@@ -73,7 +73,7 @@ impl Viewport {
     pub fn new(rs: &RenderState) -> Self {
         Viewport {
             camera: Camera::default(),
-            renderer: ViewportRenderer::new(rs),
+            renderer: ViewportRenderer::new(&rs.device),
             hovered: None,
             selection: Vec::new(),
             pick_enabled: true,
@@ -167,14 +167,14 @@ impl Viewport {
         self.rect = rect;
         if self.meshes_dirty {
             let visible = bodies.iter().enumerate().filter(|(_, b)| b.visible).map(|(i, b)| (i, &b.mesh));
-            self.renderer.set_meshes(rs, visible);
+            self.renderer.set_meshes(&rs.device, visible);
             self.meshes_dirty = false;
         }
         if self.grid_built != Some(self.grid) {
             let (plane, spacing) = self.grid;
             // Cover about the same area whatever the spacing.
             let half_cells = ((250.0 / spacing).round() as i32).clamp(25, 200);
-            self.renderer.set_grid(rs, &plane, spacing, half_cells);
+            self.renderer.set_grid(&rs.device, &plane, spacing, half_cells);
             self.grid_built = Some(self.grid);
         }
 

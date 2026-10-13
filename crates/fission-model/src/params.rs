@@ -81,6 +81,10 @@ impl FeatureKind {
                 let [x, y, z] = translate;
                 vec![("x", "X distance", Length, x), ("y", "Y distance", Length, y), ("z", "Z distance", Length, z), ("degrees", "Angle", Angle, degrees)]
             }
+            FeatureKind::Joint { motion, value, min, max, .. } => {
+                let q = if *motion == crate::JointMotion::Revolute { Angle } else { Length };
+                vec![("value", "Value", q, value), ("min", "Minimum", q, min), ("max", "Maximum", q, max)]
+            }
             FeatureKind::Pattern { pattern: PatternKind::Rectangular { spacing, second, .. }, .. } => {
                 let mut v = vec![("spacing", "Spacing", Length, spacing)];
                 if let Some((_, _, s2)) = second {

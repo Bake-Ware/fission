@@ -80,6 +80,8 @@ pub struct FissionApp {
     pub picking_sketch_plane: bool,
     /// Value being typed into the active command (Fusion-style heads-up box).
     pub hud: Option<ui::hud::Hud>,
+    /// A joint being scrubbed or played (display only, until committed).
+    pub joint_preview: Option<crate::motion::JointPreview>,
 }
 
 impl FissionApp {
@@ -119,6 +121,7 @@ impl FissionApp {
             sketch: None,
             picking_sketch_plane: false,
             hud: None,
+            joint_preview: None,
         };
         if let Some(path) = path {
             app.open_path(&path);
@@ -132,7 +135,8 @@ impl FissionApp {
     /// Put the UI into a given state for screenshots and manual checks, e.g.
     /// `FISSION_DEMO="edit:3,select-top"`. Steps: `edit:<i>`, `marker:<i>`,
     /// `suppress:<i>`, `break-fillet`, `view:<top|front|right|home>`, `menu:<create|modify|export>`,
-    /// `pick-edge:<n>`, `pick-face:<n>` (toggle-click on the first body), `preview`.
+    /// `pick-edge:<n>`, `pick-face:<n>` (toggle-click on the first body), `preview`,
+    /// `joint:<name>=<value>`, `joint-play:<name>`.
     fn run_demo(&mut self, steps: &str) {
         self.regenerate();
         for step in steps.split(',').map(str::trim) {
@@ -296,6 +300,19 @@ impl FissionApp {
                         *radius = 40.0;
                     }
                 }),
+                // Show a joint at a value without committing it: `joint:Hinge=-90`
+                // (no name: the only joint). `joint-play:Hinge` starts it swinging.
+                ("joint" | "joint-play", _) => {
+                    let (joint, value) = arg.split_once('=').unwrap_or((arg, ""));
+                    match self.doc.joint(joint) {
+                        Ok(j) if name == "joint-play" => self.toggle_joint_play(j.feature),
+                        Ok(j) => match value.trim().parse::<f64>() {
+                            Ok(v) => self.preview_joint(j.feature, v),
+                            Err(_) => log::warn!("joint step '{arg}' needs =<value>"),
+                        },
+                        Err(e) => log::warn!("{e}"),
+                    }
+                }
                 ("view", _) => {
                     use crate::viewport::StandardView::*;
                     let view = match arg {
@@ -376,6 +393,8 @@ impl FissionApp {
             })
             .collect();
         self.regen_ms = start.elapsed().as_secs_f32() * 1000.0;
+        // New meshes replace any joint preview's.
+        self.joint_preview = None;
         self.viewport.bodies_changed(&self.bodies);
         if self.first_regen {
             self.viewport.fit_all(&self.bodies);
@@ -476,6 +495,7 @@ impl FissionApp {
                     | FeatureKind::Thread { .. }
                     | FeatureKind::Combine { .. }
                     | FeatureKind::Move { .. }
+                    | FeatureKind::Joint { .. }
                     | FeatureKind::Mirror { .. }
                     | FeatureKind::Scale { .. }
                     | FeatureKind::Split { .. }
@@ -532,6 +552,7 @@ impl FissionApp {
                 }
             }
             FeatureKind::Move { bodies, .. }
+            | FeatureKind::Joint { bodies, .. }
             | FeatureKind::Mirror { bodies, .. }
             | FeatureKind::Pattern { bodies, .. }
             | FeatureKind::Scale { bodies, .. } => {
@@ -669,6 +690,7 @@ impl FissionApp {
             }
             Some(
                 FeatureKind::Move { bodies, .. }
+                | FeatureKind::Joint { bodies, .. }
                 | FeatureKind::Mirror { bodies, .. }
                 | FeatureKind::Pattern { bodies, .. }
                 | FeatureKind::Scale { bodies, .. },
@@ -785,6 +807,17 @@ impl FissionApp {
     pub fn new_move(&mut self) {
         let bodies = self.selected_bodies();
         self.create(FeatureKind::Move { bodies, translate: [10.0, 0.0, 0.0], axis: Axis::Z, degrees: 0.0, copy: false });
+    }
+
+    /// ASSEMBLE ▸ Joint: the selected bodies (or the last) hinge about the
+    /// latest construction axis, or X.
+    pub fn new_joint(&mut self) {
+        let bodies = self.selected_bodies();
+        let axis = match self.doc.construction_axes().last() {
+            Some(&(feature, origin, dir)) => Axis::Line { feature, origin, dir },
+            None => Axis::X,
+        };
+        self.create(FeatureKind::Joint { bodies, motion: fission_model::JointMotion::Revolute, axis, value: 0.0, min: -90.0, max: 90.0 });
     }
 
     /// MODIFY ▸ Scale: the selected bodies (or the last), about the origin.
@@ -1698,6 +1731,9 @@ impl eframe::App for FissionApp {
         self.shortcuts(&ctx);
         if self.needs_regen {
             self.regenerate();
+        }
+        if self.tick_joint_play() {
+            ctx.request_repaint();
         }
         self.update_title(&ctx);
 

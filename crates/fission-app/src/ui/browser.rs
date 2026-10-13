@@ -68,6 +68,57 @@ fn parts(app: &mut FissionApp, ui: &mut egui::Ui, feature: usize) {
     });
 }
 
+/// A slider per joint: dragging moves its bodies live, releasing keeps the
+/// value. The play button swings it between its limits.
+fn joints(app: &mut FissionApp, ui: &mut egui::Ui) {
+    let joints = app.doc.joints();
+    if joints.is_empty() {
+        return;
+    }
+    egui::CollapsingHeader::new(format!("Joints ({})", joints.len())).id_salt("joints").default_open(true).show(ui, |ui| {
+        for joint in joints {
+            let preview = app.joint_preview.as_ref().filter(|p| p.feature == joint.feature);
+            let playing = preview.is_some_and(|p| p.playing.is_some());
+            let mut value = preview.map_or(joint.value, |p| p.value);
+            ui.horizontal(|ui| {
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                icons::paint(ui.painter(), rect, Icon::Joint, theme::icon());
+                let response = ui.selectable_label(app.selected_feature == Some(joint.feature), &joint.name);
+                if response.clicked() {
+                    app.selected_feature = Some(joint.feature);
+                }
+                if response.double_clicked() {
+                    app.begin_edit(joint.feature);
+                }
+                let label = if playing { "Stop" } else { "Play" };
+                if ui.small_button(label).on_hover_text("Swing between the limits").clicked() {
+                    app.toggle_joint_play(joint.feature);
+                }
+            });
+            let suffix = if joint.motion == fission_model::JointMotion::Revolute { "deg" } else { "mm" };
+            let range = joint.min.min(joint.max)..=joint.max.max(joint.min);
+            // Fixed widths: a row that changes width while playing makes the
+            // panel re-lay itself out every frame.
+            let response = ui
+                .horizontal(|ui| {
+                    ui.spacing_mut().slider_width = 110.0;
+                    let r = ui.add_enabled(!playing, egui::Slider::new(&mut value, range).show_value(false));
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(64.0, 16.0), egui::Sense::hover());
+                    ui.painter().text(rect.right_center(), egui::Align2::RIGHT_CENTER, format!("{value:.1} {suffix}"), egui::FontId::proportional(12.0), theme::text());
+                    r
+                })
+                .inner;
+            if response.changed() {
+                app.preview_joint(joint.feature, value);
+            }
+            // A drag commits on release; a typed or clicked value at once.
+            if response.drag_stopped() || (response.changed() && !response.dragged()) {
+                app.commit_joint_preview();
+            }
+        }
+    });
+}
+
 fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
     egui::CollapsingHeader::new(RichText::new(&app.doc.name).strong())
         .id_salt("doc_root")
@@ -130,6 +181,8 @@ fn tree(app: &mut FissionApp, ui: &mut egui::Ui) {
                         parts(app, ui, app.bodies[i].created_by);
                     }
                 });
+
+            joints(app, ui);
 
             egui::CollapsingHeader::new(format!("Features ({})", app.doc.features.len()))
                 .id_salt("features")

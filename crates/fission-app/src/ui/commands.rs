@@ -43,6 +43,8 @@ pub enum Command {
     PointEdgePlane,
     Combine,
     Move,
+    Joint,
+    Interference,
     Mirror,
     PatternRect,
     PatternCirc,
@@ -99,6 +101,8 @@ impl Command {
             Command::PointEdgePlane => "Point at Edge and Plane",
             Command::Combine => "Combine",
             Command::Move => "Move/Copy",
+            Command::Joint => "Joint",
+            Command::Interference => "Interference",
             Command::Mirror => "Mirror",
             Command::PatternRect => "Rectangular Pattern",
             Command::PatternCirc => "Circular Pattern",
@@ -129,6 +133,7 @@ impl Command {
             Command::PressPull => Some("Q"),
             Command::Fillet => Some("F"),
             Command::Move => Some("M"),
+            Command::Joint => Some("J"),
             Command::Appearance => Some("A"),
             _ => None,
         }
@@ -164,6 +169,8 @@ impl Command {
             Command::PointEdgePlane => Icon::Point,
             Command::Combine => Icon::Combine,
             Command::Move => Icon::Move,
+            Command::Joint => Icon::Joint,
+            Command::Interference => Icon::Interference,
             Command::Mirror => Icon::Mirror,
             Command::PatternRect => Icon::PatternRect,
             Command::PatternCirc => Icon::PatternCirc,
@@ -217,6 +224,8 @@ impl Command {
             Command::PointEdgePlane => "A construction point where a selected straight edge's line goes through a selected face's plane.",
             Command::Combine => "Join, cut or intersect bodies. The first selected is the target.",
             Command::Move => "Move or copy bodies: rotate about an origin axis, then translate.",
+            Command::Joint => "Let the selected bodies hinge about an axis or slide along it, within limits. Drag its slider in the browser to try the motion.",
+            Command::Interference => "Sweep every joint through its limits and report where moving bodies collide with the rest.",
             Command::Mirror => "Mirror bodies across an origin plane.",
             Command::PatternRect => "Copy bodies in rows and columns.",
             Command::PatternCirc => "Copy bodies around an origin axis.",
@@ -272,6 +281,8 @@ impl Command {
             Command::PointEdgePlane => app.new_point_at_edge_and_plane(),
             Command::Combine => app.new_combine(),
             Command::Move => app.new_move(),
+            Command::Joint => app.new_joint(),
+            Command::Interference => app.check_interference(),
             Command::Mirror => app.new_mirror(),
             Command::PatternRect => app.new_pattern(false),
             Command::PatternCirc => app.new_pattern(true),
@@ -374,6 +385,11 @@ pub const SOLID_PANELS: &[Panel] = &[
         ],
     },
     Panel {
+        label: "ASSEMBLE",
+        toolbar: &[Command::Joint],
+        dropdown: &[Cmd(Command::Joint), Planned("Rigid Group"), Planned("Motion Link"), Separator, Cmd(Command::Interference)],
+    },
+    Panel {
         label: "CONSTRUCT",
         toolbar: &[Command::OffsetPlane],
         dropdown: &[
@@ -405,7 +421,7 @@ pub const SOLID_PANELS: &[Panel] = &[
     Panel {
         label: "INSPECT",
         toolbar: &[Command::Measure, Command::Section],
-        dropdown: &[Cmd(Command::Measure), Planned("Interference"), Planned("Curvature Comb Analysis"), Cmd(Command::Section)],
+        dropdown: &[Cmd(Command::Measure), Cmd(Command::Interference), Planned("Curvature Comb Analysis"), Cmd(Command::Section)],
     },
     Panel {
         label: "EXPORT",

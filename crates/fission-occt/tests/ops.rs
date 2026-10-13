@@ -577,3 +577,26 @@ fn threaded_shaft_tessellates_watertight() {
     assert_watertight(&k.tessellate(&plate(&k), 0.01).unwrap());
     assert_watertight(&k.tessellate(&threaded, 0.01).unwrap());
 }
+
+#[test]
+fn joint_sweep_measures_overlap_with_the_kernel() {
+    use fission_model::{motion, Axis, Document, FeatureKind, JointMotion, Operation, OriginPlane, Sketch};
+    // A 10 mm cube at the origin, and another sliding toward it along X.
+    let mut doc = Document::default();
+    for x in [0.0, 20.0] {
+        doc.push(FeatureKind::Extrude {
+            sketch: Sketch::Rect { plane: OriginPlane::XY, offset: 0.0, center: [x, 0.0], size: [10.0, 10.0] },
+            distance: 10.0,
+            symmetric: false,
+            operation: Operation::NewBody,
+        });
+    }
+    doc.push(FeatureKind::Joint { bodies: vec![1], motion: JointMotion::Slider, axis: Axis::X, value: 0.0, min: -15.0, max: 0.0 });
+    let joint = doc.joint("").unwrap();
+    let sweep = doc.sweep_joint(&Occt, &joint, &motion::steps(0.0, -15.0, 4), 0.01).unwrap();
+    let overlaps: Vec<f64> = sweep.samples.iter().map(|s| s.overlap).collect();
+    // Gap of 10 mm: clear at 0, -5 and -10 (faces touching), 5 mm into it at -15.
+    assert!(overlaps[..3].iter().all(|&v| v < 0.01), "{overlaps:?}");
+    assert!((overlaps[3] - 500.0).abs() < 1e-6, "{overlaps:?}");
+    assert_eq!(sweep.clear, Some((-10.0, 0.0)));
+}

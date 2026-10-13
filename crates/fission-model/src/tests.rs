@@ -655,3 +655,71 @@ fn construction_points_make_no_bodies() {
     doc.features[p].suppressed = true;
     assert!(doc.construction_points().is_empty());
 }
+
+fn hinge(doc: &mut Document, value: f64) -> usize {
+    doc.push(FeatureKind::Joint {
+        bodies: vec![1],
+        motion: JointMotion::Revolute,
+        axis: Axis::X,
+        value,
+        min: -180.0,
+        max: 10.0,
+    })
+}
+
+#[test]
+fn joint_turns_its_bodies_within_limits() {
+    let mut doc = two_boxes();
+    hinge(&mut doc, -90.0);
+    let r = doc.regenerate(&Fake);
+    assert_eq!(r.bodies[0].solid, "extrude(1@0)", "the other body stays put");
+    assert_eq!(r.bodies[1].solid, "R-90(extrude(1@5))");
+
+    let mut doc = two_boxes();
+    let j = hinge(&mut doc, 12.0);
+    let r = doc.regenerate(&Fake);
+    assert!(matches!(&r.status[j], FeatureStatus::Error(e) if e.contains("outside its limits")), "{:?}", r.status[j]);
+
+    let mut doc = two_boxes();
+    doc.push(FeatureKind::Joint { bodies: vec![], motion: JointMotion::Slider, axis: Axis::Z, value: 3.0, min: 0.0, max: 5.0 });
+    assert_eq!(doc.regenerate(&Fake).bodies[1].solid, "T[0.0, 0.0, 3.0](extrude(1@5))", "a slider with no bodies moves the last one");
+    assert_eq!(doc.joints()[0].bodies, vec![1]);
+}
+
+#[test]
+fn joint_value_set_through_its_parameter() {
+    let mut doc = two_boxes();
+    let j = hinge(&mut doc, 0.0);
+    doc.parameters.push(Parameter { name: "fold".into(), expression: "-30 deg".into(), quantity: Quantity::Angle, comment: String::new() });
+    doc.features[j].exprs.insert("value".into(), "fold".into());
+    assert!(doc.apply_expressions().is_empty());
+    assert_eq!(doc.joint("").unwrap().value, -30.0);
+
+    doc.set_joint_value(j, -500.0);
+    assert_eq!(doc.parameters[0].expression, "-180 deg", "clamped, and written to the parameter");
+    assert!(doc.apply_expressions().is_empty());
+    assert_eq!(doc.joint("joint1").unwrap().value, -180.0);
+}
+
+#[test]
+fn joint_survives_ron_and_reorders() {
+    let mut doc = two_boxes();
+    hinge(&mut doc, 5.0);
+    doc.reorder(0, 1);
+    let FeatureKind::Joint { bodies, .. } = &doc.features[2].kind else { panic!() };
+    assert_eq!(bodies, &vec![0], "body references follow the reorder");
+    let back = Document::from_ron(&doc.to_ron().unwrap()).unwrap();
+    assert_eq!(back, doc);
+}
+
+#[test]
+fn rigid_rotation_about_an_offset_axis() {
+    let r = Rigid::joint(JointMotion::Revolute, [0.0, -33.0, 18.9], [1.0, 0.0, 0.0], 90.0);
+    let p = r.point([5.0, -33.0, 28.9]); // 10 above the axis
+    let want = [5.0, -43.0, 18.9]; // turned +90 about +X: +Z goes to -Y
+    for k in 0..3 {
+        assert!((p[k] - want[k]).abs() < 1e-9, "{p:?}");
+    }
+    let s = Rigid::joint(JointMotion::Slider, [0.0; 3], [0.0, 1.0, 0.0], 4.0);
+    assert_eq!(s.point([1.0, 1.0, 1.0]), [1.0, 5.0, 1.0]);
+}

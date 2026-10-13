@@ -1,5 +1,4 @@
-//! Minimal PNG encoder (RGBA8, stored deflate blocks). Only used to write the
-//! app icon, so size doesn't matter and no image crate is needed.
+//! Minimal PNG encoder (RGBA8), for the app icon and rendered frames.
 
 pub fn encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
     let mut raw = Vec::with_capacity(rgba.len() + height as usize);
@@ -15,7 +14,7 @@ pub fn encode_rgba(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
 
     let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
     chunk(&mut out, b"IHDR", &ihdr);
-    chunk(&mut out, b"IDAT", &zlib_stored(&raw));
+    chunk(&mut out, b"IDAT", &zlib(&raw));
     chunk(&mut out, b"IEND", &[]);
     out
 }
@@ -29,23 +28,11 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&crc.to_be_bytes());
 }
 
-fn zlib_stored(data: &[u8]) -> Vec<u8> {
-    let mut out = vec![0x78, 0x01];
-    let blocks: Vec<&[u8]> = data.chunks(65535).collect();
-    for (i, block) in blocks.iter().enumerate() {
-        out.push(u8::from(i + 1 == blocks.len()));
-        let len = block.len() as u16;
-        out.extend_from_slice(&len.to_le_bytes());
-        out.extend_from_slice(&(!len).to_le_bytes());
-        out.extend_from_slice(block);
-    }
-    let (mut a, mut b) = (1u32, 0u32);
-    for &byte in data {
-        a = (a + byte as u32) % 65521;
-        b = (b + a) % 65521;
-    }
-    out.extend_from_slice(&((b << 16) | a).to_be_bytes());
-    out
+fn zlib(data: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut z = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    z.write_all(data).expect("writing to memory");
+    z.finish().expect("writing to memory")
 }
 
 fn crc32(data: &[u8]) -> u32 {

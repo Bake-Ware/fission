@@ -10,7 +10,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/100%25-Rust-f74c00?style=for-the-badge&logo=rust&logoColor=white">
   <img alt="Kernel" src="https://img.shields.io/badge/kernel-OpenCascade%207.8-1d6cff?style=for-the-badge">
   <img alt="GPU" src="https://img.shields.io/badge/render-wgpu-7c8cff?style=for-the-badge">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-129%20passing-2ea043?style=for-the-badge">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-139%20passing-2ea043?style=for-the-badge">
   <img alt="f3d" src="https://img.shields.io/badge/opens-.f3d%20timelines-ff5ecd?style=for-the-badge">
 </p>
 
@@ -102,6 +102,17 @@ fission-app export design.f3d         out/design.3mf    # replays the .f3d timel
 
 Exit codes are `0` for OK, `1` for failure, and `3` when the file exported but some features had errors. The errors are listed on stderr, so an agent can tell which feature broke.
 
+Joints can be swept without a window, too:
+
+```sh
+fission-app interfere case.fission --joint Hinge --from -180 --to 12 --steps 33   # exit 3 on a collision
+fission-app interfere case.fission --json                                         # machine-readable
+fission-app animate   case.fission --joint Hinge --frames 30 --pingpong --out hinge.gif
+fission-app animate   case.fission --view front --size 1280x720 --dark --out frames/  # PNG sequence
+```
+
+`interfere` regenerates once, then moves the joint's bodies rigidly through the range and intersects them with every other body in the kernel. It prints each step's overlap (mm³) and which pair touches, plus the clear stretch around the joint's built value, which is the effective travel. `animate` renders through the viewport's own renderer offscreen, with one camera framing the whole sweep. GIF and MP4 go through `ffmpeg`.
+
 A design file is plain text that an agent can write directly:
 
 ```ron
@@ -126,6 +137,21 @@ tools/snap.sh out/sec.png    "cmd:section analysis" design.f3d
 ```
 
 The step grammar is documented on `FissionApp::run_demo`.
+
+---
+
+## 🦾 Joints and motion
+
+**ASSEMBLE ▸ Joint** (`J`) lets the selected bodies hinge about an axis (an origin axis, a sketch line or a construction axis) or slide along it, between a minimum and a maximum. Each joint gets a slider in the browser. Dragging it swings the bodies live, by moving their display meshes without a rebuild. Releasing keeps the value, as one undoable step. **Play** swings the joint between its limits. When the value is tied to a user parameter, the parameter takes the new value, so the design stays parametric.
+
+**INSPECT ▸ Interference** sweeps every joint through its limits and reports the first collision. The same check runs headless (see above), so an agent can tune a hinge stop and know right away whether the lid still closes.
+
+```ron
+(name: "Hinge", suppressed: false, target: None, kind: Joint(
+    bodies: [51, 101], motion: Revolute,
+    axis: Line(feature: 156, origin: (0.0, -33.0, 18.9), dir: (1.0, 0.0, 0.0)),
+    value: 0.0, min: -180.0, max: 10.0)),
+```
 
 ---
 
@@ -192,7 +218,7 @@ Fission contains **no Autodesk code, icons, assets or text**. The UI was rebuilt
 cargo test --release --workspace --exclude opencascade
 ```
 
-There are 129 tests. They cover the sketch solver and every sketch tool, typed-value expressions, timeline semantics on a fake kernel (rollback, suppress, errors, undo, save/load, reference remapping), construction geometry, and real OCCT geometry: fillets, shells, drafts, holes, threads (checked watertight), coils, splits, exact areas and volumes, STEP round trips. Tests that decode and replay real `.f3d` files run when samples are present. Put them in `$FISSION_SAMPLES` (`flathex.f3d`, `clouds.f3d`, `camera.f3d`), or `out/f3d`.
+There are 139 tests. They cover the sketch solver and every sketch tool, typed-value expressions, timeline semantics on a fake kernel (rollback, suppress, errors, undo, save/load, reference remapping), construction geometry, and real OCCT geometry: fillets, shells, drafts, holes, threads (checked watertight), coils, splits, exact areas and volumes, STEP round trips. Tests that decode and replay real `.f3d` files run when samples are present. Put them in `$FISSION_SAMPLES` (`flathex.f3d`, `clouds.f3d`, `camera.f3d`), or `out/f3d`.
 
 `tools/stl/check_stl.py` checks that an exported mesh is printable: closed, consistently oriented, with its volume and bounding box. `tools/stl/flatten_orca.py` resolves OrcaSlicer preset inheritance so the slicer CLI can run in CI.
 
@@ -204,7 +230,7 @@ Fission is young and moving fast. What's next:
 
 - **f3d:** extrudes from model faces and Shell (these need face naming), feature patterns, threads, drafts, chamfers, and component transforms and body visibility.
 - **Sketch:** splines; projected edges that follow the model.
-- **Modeling:** loft and sweep rails and twist, rib / web, thicken, split face, cosmetic threads, materials, assemblies and joints, drawings.
+- **Modeling:** loft and sweep rails and twist, rib / web, thicken, split face, cosmetic threads, materials, components and joint chains (joints that move other joints), contact sets, drawings.
 - **Kernel:** a pure-Rust backend behind the same `Kernel` trait.
 - **Agents:** an MCP / JSON-RPC surface over the timeline, so an agent can add features, query faces and measure without the UI at all.
 
@@ -281,6 +307,11 @@ Commands (hotkeys follow Fusion):
   Section Analysis cuts the view on an origin plane at a distance (flip to
   keep the other side) and fills the cut solids with a hatched cap; picking
   ignores what's cut away.
+- **ASSEMBLE**: Joint `J`. Pick the moving bodies (none means the last body),
+  Revolute or Slider, the axis, and Minimum / Maximum / Value. Drag a joint's
+  browser slider to try the motion, or press Play. Interference (also under
+  INSPECT) sweeps every joint through its limits and names the first pair
+  that collides.
 - **View ▸ Dark Mode** switches the whole UI and viewport between light and dark (remembered between runs).
 - **Appearance** (`A`, MODIFY ▸ Appearance, or right-click a body in the
   browser): finish swatches or a custom color for the selected bodies.

@@ -152,6 +152,11 @@ pub fn init(ctx: &egui::Context) {
     apply(ctx);
 }
 
+/// Pick the mode without a UI (headless rendering), and without saving it.
+pub fn use_dark(dark: bool) {
+    IS_DARK.store(dark, Ordering::Relaxed);
+}
+
 /// Switch modes and remember the choice.
 pub fn set_dark(ctx: &egui::Context, dark: bool) {
     IS_DARK.store(dark, Ordering::Relaxed);

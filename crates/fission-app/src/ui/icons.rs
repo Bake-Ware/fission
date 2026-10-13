@@ -25,6 +25,8 @@ pub enum Icon {
     Shell,
     Combine,
     Move,
+    Joint,
+    Interference,
     Mirror,
     PatternRect,
     PatternCirc,
@@ -176,6 +178,28 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             for d in [Vec2::X, -Vec2::X, Vec2::Y, -Vec2::Y] {
                 painter.arrow(c, d * rect.width() * 0.38, s);
             }
+        }
+        Icon::Joint => {
+            // Two leaves on a hinge pin, one swung up, with the swing arc.
+            painter.line_segment([p(0.10, 0.78), p(0.46, 0.78)], Stroke::new(s.width * 1.6, color));
+            painter.line_segment([p(0.54, 0.74), p(0.80, 0.30)], Stroke::new(s.width * 1.6, theme::accent()));
+            painter.circle_stroke(p(0.50, 0.78), rect.width() * 0.08, s);
+            let arc: Vec<Pos2> = (0..=8)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (0.05 + 0.28 * i as f32 / 8.0);
+                    let c = p(0.5, 0.78);
+                    Pos2::new(c.x + rect.width() * 0.38 * a.cos(), c.y - rect.width() * 0.38 * a.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::dashed_line(&arc, Stroke::new(s.width * 0.8, color), 2.0, 1.5));
+        }
+        Icon::Interference => {
+            // Two overlapping boxes with the shared part filled red.
+            let a = Rect::from_min_max(p(0.10, 0.30), p(0.62, 0.86));
+            let b = Rect::from_min_max(p(0.38, 0.14), p(0.90, 0.66));
+            painter.rect_filled(a.intersect(b), 1.0, theme::error().linear_multiply(0.7));
+            painter.rect_stroke(a, 2.0, s, egui::StrokeKind::Middle);
+            painter.rect_stroke(b, 2.0, Stroke::new(s.width, theme::accent()), egui::StrokeKind::Middle);
         }
         Icon::OffsetPlane => {
             // Two stacked planes with an arrow between them.

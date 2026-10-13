@@ -2,7 +2,7 @@
 //! immediately so the model previews live; Cancel restores the snapshot.
 
 use eframe::egui::{self, Rect, RichText};
-use fission_model::{Axis, EdgeRef, FeatureKind, FeatureStatus, HoleKind, Operation, OriginPlane, PatternKind, Sketch};
+use fission_model::{Axis, EdgeRef, FeatureKind, FeatureStatus, HoleKind, JointMotion, Operation, OriginPlane, PatternKind, Sketch};
 
 use super::theme;
 use crate::app::FissionApp;
@@ -384,6 +384,43 @@ fn fields(
             ui.label("");
             changed |= ui.checkbox(copy, "Create copy").changed();
             ui.end_row();
+        }
+        FeatureKind::Joint { bodies, motion, axis, value, min, max } => {
+            let mut clear = false;
+            picked_label(ui, "Moving bodies", bodies.len(), "Last body (click to choose)", &mut clear);
+            if clear {
+                bodies.clear();
+                changed = true;
+            }
+            changed |= preview_row(ui, preview);
+            ui.label("Motion");
+            egui::ComboBox::from_id_salt("joint_motion").selected_text(motion.label()).show_ui(ui, |ui| {
+                for m in [JointMotion::Revolute, JointMotion::Slider] {
+                    changed |= ui.selectable_value(motion, m, m.label()).changed();
+                }
+            });
+            ui.end_row();
+            ui.label(if *motion == JointMotion::Revolute { "Turn about" } else { "Slide along" });
+            changed |= axis_combo(ui, "joint_axis", axis, axes);
+            ui.end_row();
+            let revolute = *motion == JointMotion::Revolute;
+            let row = |ui: &mut egui::Ui, label: &str, v: &mut f64| {
+                ui.label(label);
+                let changed = if revolute {
+                    ui.add(egui::DragValue::new(v).speed(1.0).range(-720.0..=720.0).suffix(" deg")).changed()
+                } else {
+                    length(ui, v, None)
+                };
+                ui.end_row();
+                changed
+            };
+            changed |= row(ui, "Minimum", min);
+            changed |= row(ui, "Maximum", max);
+            changed |= row(ui, "Value", value);
+            if *min > *max {
+                std::mem::swap(min, max);
+            }
+            *value = value.clamp(*min, *max);
         }
         FeatureKind::Split { body, plane, offset } => {
             ui.label("Body");

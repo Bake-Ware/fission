@@ -30,6 +30,7 @@ pub fn icon_for(kind: &FeatureKind) -> Icon {
         FeatureKind::Draft { .. } => Icon::Draft,
         FeatureKind::Combine { .. } => Icon::Combine,
         FeatureKind::Move { .. } => Icon::Move,
+        FeatureKind::Joint { .. } => Icon::Joint,
         FeatureKind::Mirror { .. } => Icon::Mirror,
         FeatureKind::Scale { .. } => Icon::Scale,
         FeatureKind::Split { .. } => Icon::Split,

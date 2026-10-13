@@ -11,6 +11,7 @@ mod params;
 mod history;
 pub mod thread;
 pub mod f3d;
+pub mod motion;
 pub use expr::{evaluate, evaluate_with, names_in, Quantity};
 pub use params::{dim_key, Parameter};
 pub use history::History;
@@ -491,6 +492,19 @@ pub enum FeatureKind {
         degrees: f64,
         copy: bool,
     },
+    /// Lets bodies move relative to the rest of the design, like Fusion's
+    /// as-built joint: a hinge turning `value` degrees about `axis`, or a
+    /// slide `value` mm along it, kept within `min`..=`max`. The model shows
+    /// the joint at `value`; Animate and Interference sweep it.
+    Joint {
+        #[serde(default)]
+        bodies: Vec<usize>,
+        motion: JointMotion,
+        axis: Axis,
+        value: f64,
+        min: f64,
+        max: f64,
+    },
     /// Mirror bodies across an origin plane (offset along its normal).
     Mirror {
         #[serde(default)]
@@ -509,6 +523,86 @@ pub enum FeatureKind {
     Loft { sections: Vec<Section>, operation: Operation },
     /// A sketch profile swept along the chain of sketch curves through `path`.
     Sweep { profile: Sketch, path: Option<PathRef>, operation: Operation },
+}
+
+/// How a joint moves its bodies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum JointMotion {
+    /// Turns about the axis (value in degrees).
+    Revolute,
+    /// Slides along the axis (value in mm).
+    Slider,
+}
+
+impl JointMotion {
+    pub fn label(self) -> &'static str {
+        match self {
+            JointMotion::Revolute => "Revolute",
+            JointMotion::Slider => "Slider",
+        }
+    }
+}
+
+/// A rigid motion: rotate `degrees` about the line through `origin` along
+/// unit `dir`, then translate by `by`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Rigid {
+    pub origin: [f64; 3],
+    pub dir: [f64; 3],
+    pub degrees: f64,
+    pub by: [f64; 3],
+}
+
+impl Rigid {
+    pub const IDENTITY: Rigid = Rigid { origin: [0.0; 3], dir: [0.0, 0.0, 1.0], degrees: 0.0, by: [0.0; 3] };
+
+    /// A joint's motion `value` away from where it was built.
+    pub fn joint(motion: JointMotion, origin: [f64; 3], dir: [f64; 3], value: f64) -> Rigid {
+        match motion {
+            JointMotion::Revolute => Rigid { origin, dir, degrees: value, by: [0.0; 3] },
+            JointMotion::Slider => Rigid { by: dir.map(|d| d * value), ..Rigid::IDENTITY },
+        }
+    }
+
+    /// Rotate a direction (no translation).
+    pub fn turn(&self, v: [f64; 3]) -> [f64; 3] {
+        if self.degrees == 0.0 {
+            return v;
+        }
+        // Rodrigues: v cos + (k × v) sin + k (k·v)(1 - cos)
+        let k = self.dir;
+        let (s, c) = self.degrees.to_radians().sin_cos();
+        let kxv = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+        let kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+        std::array::from_fn(|i| v[i] * c + kxv[i] * s + k[i] * kv * (1.0 - c))
+    }
+
+    pub fn point(&self, p: [f64; 3]) -> [f64; 3] {
+        let local = std::array::from_fn(|i| p[i] - self.origin[i]);
+        let r = self.turn(local);
+        std::array::from_fn(|i| r[i] + self.origin[i] + self.by[i])
+    }
+}
+
+/// A joint as the UI and the sweep tools see it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct JointInfo {
+    /// The Joint feature's index.
+    pub feature: usize,
+    pub name: String,
+    pub motion: JointMotion,
+    /// Moved bodies by creating feature (resolved: never empty once regenerated).
+    pub bodies: Vec<usize>,
+    pub axis: Axis,
+    pub value: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+impl JointInfo {
+    pub fn clamp(&self, v: f64) -> f64 {
+        v.clamp(self.min.min(self.max), self.max.max(self.min))
+    }
 }
 
 /// A sketch region, by a point inside it.
@@ -651,6 +745,7 @@ impl FeatureKind {
             FeatureKind::Coil { .. } => "Coil",
             FeatureKind::Combine { .. } => "Combine",
             FeatureKind::Move { .. } => "Move",
+            FeatureKind::Joint { .. } => "Joint",
             FeatureKind::Mirror { .. } => "Mirror",
             FeatureKind::Scale { .. } => "Scale",
             FeatureKind::Split { .. } => "Split Body",
@@ -676,6 +771,9 @@ pub struct Feature {
     /// Appearance (RGB 0..1) of the body this feature creates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 3]>,
+    /// Name of the body this feature creates (default: Body<n>).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_name: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -736,7 +834,7 @@ impl Document {
         let name = format!("{}{}", kind.type_name(), n);
         let at = self.marker.min(self.features.len());
         self.remap(|i| Some(if i >= at { i + 1 } else { i }));
-        self.features.insert(at, Feature { name, kind, suppressed: false, target: None, exprs: Default::default(), color: None });
+        self.features.insert(at, Feature { name, kind, suppressed: false, target: None, exprs: Default::default(), color: None, body_name: None });
         self.marker = at + 1;
         at
     }
@@ -805,7 +903,7 @@ impl Document {
                     map(target);
                     tools.iter_mut().for_each(map);
                 }
-                FeatureKind::Move { bodies, axis, .. } => {
+                FeatureKind::Move { bodies, axis, .. } | FeatureKind::Joint { bodies, axis, .. } => {
                     bodies.iter_mut().for_each(map);
                     axis.remap(&map);
                 }
@@ -864,6 +962,81 @@ impl Document {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Joints that are applied and unsuppressed, in timeline order. A joint
+    /// with no bodies listed moves the last body before it, as regeneration
+    /// does; `bodies` says which (by creating feature).
+    pub fn joints(&self) -> Vec<JointInfo> {
+        let mut out = Vec::new();
+        for (i, f) in self.features.iter().enumerate().take(self.marker) {
+            let FeatureKind::Joint { bodies, motion, axis, value, min, max } = &f.kind else { continue };
+            if f.suppressed {
+                continue;
+            }
+            let bodies = if bodies.is_empty() { self.last_body_before(i).into_iter().collect() } else { bodies.clone() };
+            out.push(JointInfo { feature: i, name: f.name.clone(), motion: *motion, bodies, axis: *axis, value: *value, min: *min, max: *max });
+        }
+        out
+    }
+
+    /// The joint called `name` (case-insensitive), or the only joint when
+    /// `name` is empty.
+    pub fn joint(&self, name: &str) -> Result<JointInfo, String> {
+        let joints = self.joints();
+        if name.is_empty() {
+            return match joints.len() {
+                1 => Ok(joints.into_iter().next().unwrap()),
+                0 => Err("the design has no joints".into()),
+                _ => Err(format!(
+                    "the design has several joints; name one: {}",
+                    joints.iter().map(|j| j.name.as_str()).collect::<Vec<_>>().join(", ")
+                )),
+            };
+        }
+        joints.into_iter().find(|j| j.name.eq_ignore_ascii_case(name)).ok_or_else(|| format!("no joint named '{name}'"))
+    }
+
+    /// Set a joint's value (clamped to its limits). When the value is tied to
+    /// a single user parameter, the parameter changes instead, so the
+    /// design stays parametric.
+    pub fn set_joint_value(&mut self, feature: usize, value: f64) {
+        let Some(f) = self.features.get_mut(feature) else { return };
+        let FeatureKind::Joint { value: v, min, max, motion, .. } = &mut f.kind else { return };
+        let value = value.clamp(min.min(*max), max.max(*min));
+        *v = value;
+        let unit = if *motion == JointMotion::Revolute { "deg" } else { "mm" };
+        if let Some(expr) = f.exprs.get("value").cloned() {
+            let name = expr.trim();
+            match self.parameters.iter_mut().find(|p| p.name == name) {
+                Some(p) => p.expression = format!("{value} {unit}"),
+                None => {
+                    self.features[feature].exprs.remove("value");
+                }
+            }
+        }
+    }
+
+    /// The body-creating feature regeneration would treat as "the last body"
+    /// just before feature `before` (a guess without a kernel: the latest
+    /// feature that makes a new body).
+    fn last_body_before(&self, before: usize) -> Option<usize> {
+        self.features[..before.min(self.features.len())].iter().enumerate().rev().find_map(|(i, f)| {
+            let new_body = match &f.kind {
+                FeatureKind::Extrude { operation, .. }
+                | FeatureKind::Revolve { operation, .. }
+                | FeatureKind::Sphere { operation, .. }
+                | FeatureKind::Torus { operation, .. }
+                | FeatureKind::Loft { operation, .. }
+                | FeatureKind::Sweep { operation, .. }
+                | FeatureKind::Coil { operation, .. }
+                | FeatureKind::ImportStep { operation, .. } => *operation == Operation::NewBody,
+                FeatureKind::Split { .. } | FeatureKind::Mirror { join: false, .. } | FeatureKind::Pattern { join: false, .. } => true,
+                FeatureKind::Move { copy, .. } => *copy,
+                _ => false,
+            };
+            (new_body && !f.suppressed).then_some(i)
+        })
     }
 
     /// Solved sketches (applied, unsuppressed), without a kernel: sketches are
@@ -945,6 +1118,11 @@ impl Document {
             match apply(kernel, feature, &mut bodies, &sketches, (&mut parts, &mut part_faces), i) {
                 Ok(()) => status.push(FeatureStatus::Ok),
                 Err(message) => status.push(FeatureStatus::Error(message)),
+            }
+        }
+        for body in &mut bodies {
+            if let Some(name) = self.features.get(body.created_by).and_then(|f| f.body_name.clone()) {
+                body.name = name;
             }
         }
         Regen { bodies, status, parts, part_faces, sketches }
@@ -1163,6 +1341,24 @@ fn apply<K: Kernel>(
                 } else {
                     body.solid = moved;
                 }
+            }
+            Ok(())
+        }
+        FeatureKind::Joint { bodies: which, motion, axis, value, min, max } => {
+            if min > max {
+                return Err("the joint's lower limit is above its upper limit".into());
+            }
+            if value < min || value > max {
+                return Err(format!("the joint's value {value} is outside its limits {min}..{max}"));
+            }
+            let (origin, dir) = axis.resolve(sketches)?;
+            for owner in body_list(bodies, which)? {
+                let body = find_body(bodies, owner)?;
+                body.solid = match motion {
+                    _ if *value == 0.0 => continue,
+                    JointMotion::Revolute => kernel.rotate(&body.solid, origin, dir, *value),
+                    JointMotion::Slider => kernel.translate(&body.solid, dir.map(|d| d * value)),
+                };
             }
             Ok(())
         }

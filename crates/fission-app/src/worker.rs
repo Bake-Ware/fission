@@ -28,6 +28,8 @@ enum Request {
     Regen { doc: String, base_marker: Option<usize> },
     /// Regenerate and export bodies whose creating feature isn't in `hidden`.
     Export { doc: String, hidden: Vec<usize>, path: String },
+    /// Sweep a joint (by name; empty: the only one) through `values`.
+    Sweep { doc: String, joint: String, values: Vec<f64>, tolerance: f64 },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -41,6 +43,7 @@ pub struct MeshBody {
 enum Reply {
     Regen { status: Vec<FeatureStatus>, parts: Vec<usize>, part_faces: Vec<Vec<(usize, usize)>>, bodies: Vec<MeshBody>, base: Option<Vec<MeshBody>>, errors: Vec<String> },
     Export(Result<(), String>),
+    Sweep(Result<fission_model::motion::Sweep, String>),
 }
 
 pub struct RegenResult {
@@ -83,6 +86,10 @@ pub fn run_worker(port: &str) -> ExitCode {
         let reply = match request {
             Request::Regen { doc, base_marker } => regen(&kernel, &doc, base_marker),
             Request::Export { doc, hidden, path } => Reply::Export(export(&kernel, &doc, &hidden, Path::new(&path))),
+            Request::Sweep { doc, joint, values, tolerance } => Reply::Sweep(parse(&doc).and_then(|doc| {
+                let joint = doc.joint(&joint)?;
+                doc.sweep_joint(&kernel, &joint, &values, tolerance)
+            })),
         };
         if write_frame(&mut writer, &reply).is_err() {
             break;
@@ -205,6 +212,16 @@ impl KernelClient {
     }
 }
 
+impl KernelClient {
+    pub fn sweep(&mut self, doc: &Document, joint: &str, values: &[f64], tolerance: f64) -> Result<Result<fission_model::motion::Sweep, String>, Crashed> {
+        let text = doc.to_ron().map_err(|_| Crashed)?;
+        match self.call(&Request::Sweep { doc: text, joint: joint.into(), values: values.to_vec(), tolerance })? {
+            Reply::Sweep(result) => Ok(result),
+            _ => Err(Crashed),
+        }
+    }
+}
+
 impl Drop for KernelClient {
     fn drop(&mut self) {
         let _ = self.child.kill();
@@ -314,6 +331,18 @@ impl Kernel {
             }
         }
         Ok(bad - 1)
+    }
+
+    /// Sweep a joint for interference (see `Document::sweep_joint`).
+    pub fn sweep(&mut self, doc: &Document, joint: &str, values: &[f64], tolerance: f64) -> Result<fission_model::motion::Sweep, String> {
+        let safe = self.safe_doc(doc);
+        match self.client()?.sweep(&safe, joint, values, tolerance) {
+            Ok(result) => result,
+            Err(Crashed) => {
+                self.client = None;
+                Err("the geometry kernel crashed while checking interference".into())
+            }
+        }
     }
 
     pub fn export(&mut self, doc: &Document, hidden: &[usize], path: &Path) -> Result<(), String> {

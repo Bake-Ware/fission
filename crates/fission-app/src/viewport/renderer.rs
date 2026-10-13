@@ -59,6 +59,7 @@ struct Targets {
     msaa: wgpu::TextureView,
     depth: wgpu::TextureView,
     resolve: wgpu::TextureView,
+    resolve_texture: wgpu::Texture,
 }
 
 struct Geometry {
@@ -83,8 +84,7 @@ pub struct ViewportRenderer {
 }
 
 impl ViewportRenderer {
-    pub fn new(rs: &RenderState) -> Self {
-        let device = &rs.device;
+    pub fn new(device: &wgpu::Device) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("viewport"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -220,12 +220,12 @@ impl ViewportRenderer {
     }
 
     /// Rebuild the grid on `plane` with `spacing` between lines.
-    pub fn set_grid(&mut self, rs: &RenderState, plane: &Plane, spacing: f64, half_cells: i32) {
-        self.grid = line_geometry(&rs.device, &grid_lines(plane, spacing, half_cells));
+    pub fn set_grid(&mut self, device: &wgpu::Device, plane: &Plane, spacing: f64, half_cells: i32) {
+        self.grid = line_geometry(device, &grid_lines(plane, spacing, half_cells));
     }
 
     /// Upload the bodies' meshes. Call when the document regenerates.
-    pub fn set_meshes<'a>(&mut self, rs: &RenderState, meshes: impl IntoIterator<Item = (usize, &'a Mesh)>) {
+    pub fn set_meshes<'a>(&mut self, device: &wgpu::Device, meshes: impl IntoIterator<Item = (usize, &'a Mesh)>) {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         let mut edges = Vec::new();
@@ -252,7 +252,6 @@ impl ViewportRenderer {
             }
         }
 
-        let device = &rs.device;
         self.faces = (!indices.is_empty()).then(|| Geometry {
             vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("faces"),
@@ -272,7 +271,51 @@ impl ViewportRenderer {
     /// Render a frame at `size` physical pixels and return the egui texture showing it.
     pub fn render(&mut self, rs: &RenderState, size: [u32; 2], frame: &Frame) -> eframe::egui::TextureId {
         let size = [size[0].max(1), size[1].max(1)];
-        self.ensure_targets(rs, size);
+        if self.ensure_targets(&rs.device, size) || self.texture_id.is_none() {
+            self.register_texture(rs);
+        }
+        self.draw(&rs.device, &rs.queue, frame);
+        self.texture_id.expect("texture registered above")
+    }
+
+    /// Render a frame at `size` pixels and read it back as RGBA8 rows (for
+    /// headless export).
+    pub fn render_pixels(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: [u32; 2], frame: &Frame) -> Vec<u8> {
+        let size = [size[0].max(1), size[1].max(1)];
+        self.ensure_targets(device, size);
+        self.draw(device, queue, frame);
+        let targets = self.targets.as_ref().unwrap();
+        // Rows are copied padded to 256 bytes.
+        let row = size[0] * 4;
+        let padded = row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback"),
+            size: (padded * size[1]) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback") });
+        encoder.copy_texture_to_buffer(
+            targets.resolve_texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: None },
+            },
+            wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
+        );
+        queue.submit([encoder.finish()]);
+        let slice = buffer.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let Ok(data) = slice.get_mapped_range() else { return Vec::new() };
+        let mut out = Vec::with_capacity((row * size[1]) as usize);
+        for y in 0..size[1] as usize {
+            out.extend_from_slice(&data[y * padded as usize..][..row as usize]);
+        }
+        out
+    }
+
+    fn draw(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, frame: &Frame) {
         let targets = self.targets.as_ref().unwrap();
 
         let globals = Globals {
@@ -299,9 +342,9 @@ impl ViewportRenderer {
                 colors
             },
         };
-        rs.queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
+        queue.write_buffer(&self.globals, 0, bytemuck::bytes_of(&globals));
 
-        let mut encoder = rs.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("viewport") });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("viewport") });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("viewport"),
@@ -341,19 +384,16 @@ impl ViewportRenderer {
                 pass.draw(0..lines.count, 0..1);
             }
         }
-        rs.queue.submit([encoder.finish()]);
-
-        self.texture_id.expect("texture registered in ensure_targets")
+        queue.submit([encoder.finish()]);
     }
 
-    fn ensure_targets(&mut self, rs: &RenderState, size: [u32; 2]) {
+    /// (Re)make the render targets for `size`; true if they changed.
+    fn ensure_targets(&mut self, device: &wgpu::Device, size: [u32; 2]) -> bool {
         if self.targets.as_ref().is_some_and(|t| t.size == size) {
-            return;
+            return false;
         }
-        let device = &rs.device;
-        let texture = |label, samples, format, usage| {
-            device
-                .create_texture(&wgpu::TextureDescriptor {
+        let raw_texture = |label, samples, format, usage| {
+            device.create_texture(&wgpu::TextureDescriptor {
                     label: Some(label),
                     size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
                     mip_level_count: 1,
@@ -363,34 +403,38 @@ impl ViewportRenderer {
                     usage,
                     view_formats: &[],
                 })
-                .create_view(&Default::default())
         };
-        let targets = Targets {
+        let texture = |label, samples, format, usage| {
+            let t: wgpu::Texture = raw_texture(label, samples, format, usage);
+            t.create_view(&Default::default())
+        };
+        let resolve_texture = raw_texture(
+            "viewport color",
+            1,
+            COLOR_FORMAT,
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
+        );
+        self.targets = Some(Targets {
             size,
             msaa: texture("viewport msaa", SAMPLES, COLOR_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT),
             depth: texture("viewport depth", SAMPLES, DEPTH_FORMAT, wgpu::TextureUsages::RENDER_ATTACHMENT),
-            resolve: texture(
-                "viewport color",
-                1,
-                COLOR_FORMAT,
-                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            ),
-        };
+            resolve: resolve_texture.create_view(&Default::default()),
+            resolve_texture,
+        });
+        true
+    }
 
+    /// Show the current color target through egui.
+    fn register_texture(&mut self, rs: &RenderState) {
+        let targets = self.targets.as_ref().unwrap();
         let mut egui_renderer = rs.renderer.write();
         match self.texture_id {
-            Some(id) => egui_renderer.update_egui_texture_from_wgpu_texture(
-                device,
-                &targets.resolve,
-                wgpu::FilterMode::Linear,
-                id,
-            ),
+            Some(id) => egui_renderer.update_egui_texture_from_wgpu_texture(&rs.device, &targets.resolve, wgpu::FilterMode::Linear, id),
             None => {
                 self.texture_id =
-                    Some(egui_renderer.register_native_texture(device, &targets.resolve, wgpu::FilterMode::Linear));
+                    Some(egui_renderer.register_native_texture(&rs.device, &targets.resolve, wgpu::FilterMode::Linear));
             }
         }
-        self.targets = Some(targets);
     }
 }
 

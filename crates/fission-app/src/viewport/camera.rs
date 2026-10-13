@@ -33,6 +33,19 @@ pub enum StandardView {
 }
 
 impl StandardView {
+    pub fn parse(name: &str) -> Option<StandardView> {
+        Some(match name.to_ascii_lowercase().as_str() {
+            "home" | "iso" => StandardView::Home,
+            "top" => StandardView::Top,
+            "bottom" => StandardView::Bottom,
+            "front" => StandardView::Front,
+            "back" => StandardView::Back,
+            "right" => StandardView::Right,
+            "left" => StandardView::Left,
+            _ => return None,
+        })
+    }
+
     /// (yaw, pitch) in degrees. Front looks along +Y, so the eye sits at -Y.
     fn angles(self) -> (f32, f32) {
         match self {
@@ -135,6 +148,43 @@ impl Camera {
         let radius = ((max - min).length() / 2.0).max(1.0);
         self.target = (min + max) / 2.0;
         self.distance = radius / (self.fov_y / 2.0).sin() * 1.1;
+    }
+
+    /// Frame `points` tightly in a view of this aspect (width / height),
+    /// keeping the current direction, with `margin` (0.05 = 5%) to spare.
+    pub fn fit_points(&mut self, points: &[Vec3], aspect: f32, margin: f32) {
+        if points.is_empty() {
+            return;
+        }
+        let (min, max) = points.iter().fold((Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)), |(lo, hi), &p| (lo.min(p), hi.max(p)));
+        self.target = (min + max) / 2.0;
+        let (right, up, back) = (self.right(), self.up(), -self.forward());
+        let tan_y = (self.fov_y / 2.0).tan() * (1.0 - margin);
+        let tan_x = tan_y * aspect;
+        // Distance from the target at which every point is inside the frustum.
+        let need = |target: Vec3, p: &Vec3| {
+            let d = *p - target;
+            let depth = d.dot(back);
+            (depth + d.dot(right).abs() / tan_x).max(depth + d.dot(up).abs() / tan_y)
+        };
+        let fit = |target: Vec3| points.iter().map(|p| need(target, p)).fold(0.0f32, f32::max).max(1.0);
+        let mut distance = fit(self.target);
+        // The view is centred on the box, not on the points' screen extent:
+        // recentre on their projected middle, then refit once.
+        for _ in 0..2 {
+            let (mut lo, mut hi) = (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY));
+            for p in points {
+                let d = *p - self.target;
+                let z = distance - d.dot(back);
+                let q = Vec2::new(d.dot(right), d.dot(up)) / z.max(1e-3);
+                lo = lo.min(q);
+                hi = hi.max(q);
+            }
+            let mid = (lo + hi) / 2.0;
+            self.target += (right * mid.x + up * mid.y) * distance;
+            distance = fit(self.target);
+        }
+        self.distance = distance;
     }
 
     /// World point to viewport-local pixels; None if behind the camera.
