@@ -36,6 +36,7 @@ Desktop CAD was designed for a person with a mouse. Agents now write code, run t
 | **Design file** | Opaque binary blob | **Readable [RON](https://github.com/ron-rs/ron) text**: a list of features and parameters that an agent can diff, write and review in a PR |
 | **Automation** | A scripting API bolted onto the GUI | **Headless CLI**: `fission-app export design.f3d out.stl` replays the whole timeline without a window |
 | **UI state** | Click to get there | **Scriptable states**: `FISSION_DEMO="edit:3,preview"` boots the app into any dialog for screenshot tests |
+| **Motion checks** | Drag it in the GUI and look | **`fission-app interfere`** sweeps a joint and gives the exact overlap in mm³ at every step (exit 3 on a collision). **`fission-app animate`** renders the sweep to a GIF or MP4 without a window |
 | **Kernel crashes** | Take the app down | **Crash-isolated worker**: the geometry kernel runs in its own process. If it dies, Fission bisects the timeline and marks the one bad feature red |
 | **Your data** | Cloud account, subscription | **Local files**. Opens your Fusion `.f3d` designs and exports STL / 3MF / OBJ / STEP |
 | **Geometry kernel** | Fixed | **Swappable**. The app only calls a `Kernel` trait. OpenCascade today, pure-Rust (Truck) later |
@@ -111,7 +112,7 @@ fission-app animate   case.fission --joint Hinge --frames 30 --pingpong --out hi
 fission-app animate   case.fission --view front --size 1280x720 --dark --out frames/  # PNG sequence
 ```
 
-`interfere` regenerates once, then moves the joint's bodies rigidly through the range and intersects them with every other body in the kernel. It prints each step's overlap (mm³) and which pair touches, plus the clear stretch around the joint's built value, which is the effective travel. `animate` renders through the viewport's own renderer offscreen, with one camera framing the whole sweep. GIF and MP4 go through `ffmpeg`.
+See [Joints, motion and animation](#-joints-motion-and-animation) for what they print.
 
 A design file is plain text that an agent can write directly:
 
@@ -134,17 +135,58 @@ Screenshot any UI state without touching the mouse:
 tools/snap.sh out/fillet.png "edit:3,preview"          # open a feature dialog with its preview
 tools/snap.sh out/menu.png   "menu:create"             # open a dropdown
 tools/snap.sh out/sec.png    "cmd:section analysis" design.f3d
+tools/snap.sh out/hinge.png  "joint:Hinge=-100"       case.fission   # a joint previewed at a value
 ```
 
 The step grammar is documented on `FissionApp::run_demo`.
 
 ---
 
-## 🦾 Joints and motion
+## 🦾 Joints, motion and animation
 
-**ASSEMBLE ▸ Joint** (`J`) lets the selected bodies hinge about an axis (an origin axis, a sketch line or a construction axis) or slide along it, between a minimum and a maximum. Each joint gets a slider in the browser. Dragging it swings the bodies live, by moving their display meshes without a rebuild. Releasing keeps the value, as one undoable step. **Play** swings the joint between its limits. When the value is tied to a user parameter, the parameter takes the new value, so the design stays parametric.
+<p align="center">
+  <img src="docs/img/hinge.gif" width="800" alt="A two-part handheld case folding on its barrel hinge from the +10° droop stop to closed and back, rendered headless by fission-app animate">
+</p>
+<p align="center"><sub>A handheld case's keyboard flap on a revolute joint, -180° to +10°. Rendered by <code>fission-app animate</code> in about 8 s, with no window.</sub></p>
 
-**INSPECT ▸ Interference** sweeps every joint through its limits and reports the first collision. The same check runs headless (see above), so an agent can tune a hinge stop and know right away whether the lid still closes.
+**ASSEMBLE ▸ Joint** (`J`) lets the selected bodies hinge about an axis (an origin axis, a sketch line or a construction axis) or slide along it, between a minimum and a maximum. Each joint gets a slider in the browser:
+
+- **Scrub.** Dragging the slider swings the bodies live. Their display meshes move rigidly, with no rebuild, so it stays smooth on big designs, and the camera stays put. Releasing keeps the value, as one undoable step.
+- **Play.** Swings the joint back and forth between its limits.
+- **Parametric.** When the value is tied to a user parameter, scrubbing changes the parameter, so the design stays parametric.
+
+### 🎬 Animation, headless
+
+`fission-app animate` renders a joint sweep through the same wgpu renderer the viewport uses, but offscreen. It makes no window and takes no screenshots, so it runs in CI or over SSH on any machine with a GPU:
+
+```sh
+fission-app animate case.fission --joint Hinge --from 10 --to -180 --frames 30 --pingpong --out hinge.gif
+fission-app animate case.fission --view front --size 1280x720 --fps 24 --out hinge.mp4
+fission-app animate case.fission --dark --out frames/          # a PNG per frame
+```
+
+- One camera frames the bodies over the **whole** sweep, so the zoom never jumps between frames.
+- Views: `home`, `front`, `back`, `top`, `bottom`, `left`, `right`. Add `--dark` for the dark theme.
+- `--pingpong` adds the return leg. GIF (with a per-file palette) and MP4 are encoded with `ffmpeg`. Give a directory instead to get the raw frames.
+
+### 💥 Interference
+
+**INSPECT ▸ Interference** sweeps every joint through its limits and reports the first collision. The same check runs headless, so an agent can tune a hinge stop and know right away whether the lid still closes:
+
+```console
+$ fission-app interfere case.fission --joint Hinge --from 8 --to 12 --steps 5
+Hinge (revolute, limits -180 to 10 deg, built at 0): 5 steps from 8 to 12
+      8.000 deg  clear       0.00 mm3
+      9.000 deg  clear       0.00 mm3
+     10.000 deg  clear       0.00 mm3
+     11.000 deg  HIT       245.26 mm3  Keyboard flap x Body shell 245.26
+     12.000 deg  HIT       512.64 mm3  Keyboard flap x Body shell 512.64
+clear from 8 to 10 deg
+```
+
+It regenerates once, then moves the joint's bodies rigidly and intersects them with every other body in the kernel (with a bounding-box prefilter). The result is exact B-rep volumes, not mesh estimates, and a 25-step sweep of a 150-feature design takes about 6 s. Add `--json` for machine-readable output. The exit code is `3` when anything collides.
+
+A joint in the design file:
 
 ```ron
 (name: "Hinge", suppressed: false, target: None, kind: Joint(
