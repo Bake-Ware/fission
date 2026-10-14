@@ -791,3 +791,36 @@ fn appearance_alone_is_not_a_geometry_change() {
     renamed.features[0].name = "Other".into();
     assert!(!renamed.same_except_appearance(&doc));
 }
+
+#[test]
+fn a_last_joint_moves_without_regenerating() {
+    let mut doc = two_boxes();
+    let j = hinge(&mut doc, -90.0);
+    doc.push(FeatureKind::Axis { origin: [0.0; 3], dir: [1.0, 0.0, 0.0] });
+    let mut moved = doc.clone();
+    moved.set_joint_value(j, -30.0);
+    assert!(moved.only_joint_moved(&doc, j));
+
+    let mut other = moved.clone();
+    other.features[0].suppressed = true;
+    assert!(!other.only_joint_moved(&doc, j), "anything else changing needs a rebuild");
+
+    // A later joint on the same body: rotations don't commute.
+    let mut two = doc.clone();
+    hinge(&mut two, 0.0);
+    let mut two_moved = two.clone();
+    two_moved.set_joint_value(j, -30.0);
+    assert!(!two_moved.only_joint_moved(&two, j));
+
+    // A later feature building on the moved body.
+    let mut cut = doc.clone();
+    cut.push(FeatureKind::Extrude {
+        sketch: Sketch::Rect { plane: OriginPlane::XY, offset: 0.0, center: [0.0, 0.0], size: [1.0, 1.0] },
+        distance: 1.0,
+        symmetric: false,
+        operation: Operation::Cut,
+    });
+    let mut cut_moved = cut.clone();
+    cut_moved.set_joint_value(j, -30.0);
+    assert!(!cut_moved.only_joint_moved(&cut, j));
+}

@@ -1072,6 +1072,42 @@ impl Document {
         self.features.len() == other.features.len() && plain(self) == plain(other)
     }
 
+    /// True when `self` is `before` with only joint `feature`'s value changed,
+    /// and nothing later in the timeline builds on the bodies it moves. The
+    /// bodies are then the old ones moved rigidly, which a joint preview
+    /// already shows, so no regeneration is needed.
+    pub fn only_joint_moved(&self, before: &Document, feature: usize) -> bool {
+        let mut probe = self.clone();
+        let old = before.features.get(feature).map(|f| &f.kind);
+        match (probe.features.get_mut(feature).map(|f| &mut f.kind), old) {
+            (Some(FeatureKind::Joint { value, .. }), Some(FeatureKind::Joint { value: old, .. })) => *value = *old,
+            _ => return false,
+        }
+        if probe != *before {
+            return false;
+        }
+        let joints = self.joints();
+        let Some(moved) = joints.iter().find(|j| j.feature == feature) else { return false };
+        let end = self.marker.min(self.features.len());
+        self.features[feature + 1..end].iter().enumerate().all(|(k, f)| {
+            f.suppressed
+                || match &f.kind {
+                    // Sketches are pure 2D; these make no body.
+                    FeatureKind::Sketch { .. }
+                    | FeatureKind::Plane { .. }
+                    | FeatureKind::Axis { .. }
+                    | FeatureKind::Point { .. }
+                    | FeatureKind::Canvas { .. } => true,
+                    // Rigid motions of the same body don't commute.
+                    FeatureKind::Joint { .. } => joints
+                        .iter()
+                        .find(|j| j.feature == feature + 1 + k)
+                        .is_some_and(|j| j.bodies.iter().all(|b| !moved.bodies.contains(b))),
+                    _ => false,
+                }
+        })
+    }
+
     /// Joints that are applied and unsuppressed, in timeline order. A joint
     /// with no bodies listed moves the last body before it, as regeneration
     /// does; `bodies` says which (by creating feature).

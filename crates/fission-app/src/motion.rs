@@ -4,7 +4,7 @@
 use std::time::Instant;
 
 use fission_kernel::Mesh;
-use fission_model::{JointInfo, Rigid};
+use fission_model::{FeatureStatus, JointInfo, Rigid};
 
 use crate::app::FissionApp;
 
@@ -97,9 +97,17 @@ impl FissionApp {
             self.end_joint_preview();
             return;
         }
-        // The preview's meshes already show the new value; regeneration replaces them.
+        // The preview's meshes already show the new value. When nothing
+        // later builds on the moved bodies they are exactly what regenerating
+        // would give, so keep them: a full rebuild can hang the UI for seconds
+        // after every scrub.
         self.joint_preview = None;
+        let before = self.doc.clone();
+        let built = self.status.get(feature) == Some(&FeatureStatus::Ok);
         self.commit(|doc| doc.set_joint_value(feature, value));
+        if built && self.editing.is_none() && self.doc.only_joint_moved(&before, feature) {
+            self.needs_regen = false;
+        }
     }
 
     pub fn toggle_joint_play(&mut self, feature: usize) {

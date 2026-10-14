@@ -54,7 +54,7 @@ pub struct FissionApp {
     pub regen_sketches: Vec<Option<fission_model::SketchOutput>>,
     pub status: Vec<FeatureStatus>,
     pub regen_ms: f32,
-    needs_regen: bool,
+    pub(crate) needs_regen: bool,
     first_regen: bool,
 
     pub viewport: Viewport,
