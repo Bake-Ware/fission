@@ -84,9 +84,9 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
             ui.horizontal(|ui| {
                 ui.label("Custom");
                 // egui's float picker edits linear RGB; colors are kept as sRGB.
-                let mut linear = dialog.custom.map(ecolor::linear_f32_from_gamma_f32);
+                let mut linear = dialog.custom.map(ecolor::linear_from_gamma);
                 if ui.color_edit_button_rgb(&mut linear).changed() {
-                    dialog.custom = linear.map(ecolor::gamma_f32_from_linear_f32);
+                    dialog.custom = linear.map(ecolor::gamma_from_linear);
                 }
                 if ui.button("Apply").clicked() {
                     apply = Some(Some(dialog.custom));

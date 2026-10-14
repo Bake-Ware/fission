@@ -20,7 +20,7 @@ use crate::ui::theme;
 pub fn appearance(color: Option<[f32; 3]>) -> [f32; 4] {
     match color {
         Some(c) => {
-            let [r, g, b] = c.map(egui::ecolor::linear_f32_from_gamma_f32);
+            let [r, g, b] = c.map(egui::ecolor::linear_from_gamma);
             [r, g, b, 1.0]
         }
         None => [0.0; 4],
