@@ -13,6 +13,20 @@ use glam::{Vec2, Vec3, Vec4Swizzles};
 pub use renderer::{CanvasImage, Frame, ViewportRenderer};
 use crate::ui::theme;
 
+/// A body's appearance as the renderer takes it (alpha 0: the default gray).
+/// Colors are stored as sRGB, as the swatches and color picker show them;
+/// the shader lights in linear RGB, so they are converted here. Used as is,
+/// they came out washed out and lighter than the swatch.
+pub fn appearance(color: Option<[f32; 3]>) -> [f32; 4] {
+    match color {
+        Some(c) => {
+            let [r, g, b] = c.map(egui::ecolor::linear_f32_from_gamma_f32);
+            [r, g, b, 1.0]
+        }
+        None => [0.0; 4],
+    }
+}
+
 /// One body's display data.
 pub struct DisplayBody {
     pub name: String,
@@ -186,7 +200,7 @@ impl Viewport {
         self.rect = rect;
         if self.meshes_dirty {
             let visible = bodies.iter().enumerate().filter(|(_, b)| b.visible).map(|(i, b)| (i, &b.mesh));
-            self.renderer.set_meshes(&rs.device, visible);
+            self.renderer.set_meshes(&rs.device, &rs.queue, visible);
             self.meshes_dirty = false;
         }
         if self.canvases_dirty {

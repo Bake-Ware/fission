@@ -1,11 +1,11 @@
 //! MODIFY ▸ Appearance (`A`): color the selected bodies (or the last one).
 
-use eframe::egui::{self, Color32, RichText, Stroke};
+use eframe::egui::{self, ecolor, Color32, RichText, Stroke};
 
 use super::theme;
 use crate::app::FissionApp;
 
-/// Generic finishes (plain colors; no textures).
+/// Generic finishes (plain sRGB colors; no textures).
 const SWATCHES: &[(&str, [f32; 3])] = &[
     ("Aluminum", [0.78, 0.80, 0.82]),
     ("Steel", [0.55, 0.57, 0.60]),
@@ -28,11 +28,13 @@ const SWATCHES: &[(&str, [f32; 3])] = &[
 pub struct AppearanceDialog {
     /// Bodies to color, by creating feature. Empty: the last body.
     pub targets: Vec<usize>,
+    /// sRGB, like the swatches and `Feature::color`.
     pub custom: [f32; 3],
 }
 
 fn to_color32(c: [f32; 3]) -> Color32 {
-    Color32::from_rgb((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8)
+    let [r, g, b] = c.map(|x| (x.clamp(0.0, 1.0) * 255.0).round() as u8);
+    Color32::from_rgb(r, g, b)
 }
 
 pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
@@ -81,7 +83,11 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context) {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.label("Custom");
-                ui.color_edit_button_rgb(&mut dialog.custom);
+                // egui's float picker edits linear RGB; colors are kept as sRGB.
+                let mut linear = dialog.custom.map(ecolor::linear_f32_from_gamma_f32);
+                if ui.color_edit_button_rgb(&mut linear).changed() {
+                    dialog.custom = linear.map(ecolor::gamma_f32_from_linear_f32);
+                }
                 if ui.button("Apply").clicked() {
                     apply = Some(Some(dialog.custom));
                 }

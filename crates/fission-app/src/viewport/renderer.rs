@@ -95,7 +95,6 @@ struct Targets {
 
 struct Geometry {
     vertices: wgpu::Buffer,
-    indices: Option<wgpu::Buffer>,
     count: u32,
 }
 
@@ -331,10 +330,15 @@ impl ViewportRenderer {
         self.grid = line_geometry(device, &grid_lines(plane, spacing, half_cells));
     }
 
-    /// Upload the bodies' meshes. Call when the document regenerates.
-    pub fn set_meshes<'a>(&mut self, device: &wgpu::Device, meshes: impl IntoIterator<Item = (usize, &'a Mesh)>) {
+    /// Upload the bodies' meshes. Call when the document regenerates or a
+    /// joint moves bodies.
+    pub fn set_meshes<'a>(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        meshes: impl IntoIterator<Item = (usize, &'a Mesh)>,
+    ) {
         let mut vertices = Vec::new();
-        let mut indices = Vec::new();
         let mut edges = Vec::new();
         let edge_color = [0.12, 0.14, 0.17, 1.0];
 
@@ -343,7 +347,6 @@ impl ViewportRenderer {
             for (t, tri) in mesh.indices.chunks_exact(3).enumerate() {
                 let id = pack_id(body, mesh.face_ids[t]);
                 for &i in tri {
-                    indices.push(vertices.len() as u32);
                     vertices.push(FaceVertex {
                         pos: mesh.positions[i as usize],
                         normal: mesh.normals.get(i as usize).copied().unwrap_or([0.0, 0.0, 1.0]),
@@ -359,20 +362,8 @@ impl ViewportRenderer {
             }
         }
 
-        self.faces = (!indices.is_empty()).then(|| Geometry {
-            vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("faces"),
-                contents: bytemuck::cast_slice(&vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }),
-            indices: Some(device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("face indices"),
-                contents: bytemuck::cast_slice(&indices),
-                usage: wgpu::BufferUsages::INDEX,
-            })),
-            count: indices.len() as u32,
-        });
-        self.edges = line_geometry(device, &edges);
+        self.faces = upload(device, queue, self.faces.take(), "faces", &vertices);
+        self.edges = upload(device, queue, self.edges.take(), "edges", &edges);
     }
 
     /// Set the reference images to draw. Images are uploaded the first time
@@ -530,8 +521,7 @@ impl ViewportRenderer {
             if let Some(faces) = &self.faces {
                 pass.set_pipeline(&self.faces_pipeline);
                 pass.set_vertex_buffer(0, faces.vertices.slice(..));
-                pass.set_index_buffer(faces.indices.as_ref().unwrap().slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..faces.count, 0, 0..1);
+                pass.draw(0..faces.count, 0..1);
             }
 
             pass.set_pipeline(&self.lines_pipeline);
@@ -611,9 +601,30 @@ fn line_geometry(device: &wgpu::Device, lines: &[LineVertex]) -> Option<Geometry
             contents: bytemuck::cast_slice(lines),
             usage: wgpu::BufferUsages::VERTEX,
         }),
-        indices: None,
         count: lines.len() as u32,
     })
+}
+
+/// `vertices` in `old`'s buffer when they fit, else in a new one. A joint
+/// moving bodies re-uploads every frame, and allocating GPU buffers that
+/// often made playback stutter.
+fn upload<V: Pod>(device: &wgpu::Device, queue: &wgpu::Queue, old: Option<Geometry>, label: &str, vertices: &[V]) -> Option<Geometry> {
+    if vertices.is_empty() {
+        return None;
+    }
+    let bytes: &[u8] = bytemuck::cast_slice(vertices);
+    let buffer = match old {
+        Some(g) if g.vertices.size() >= bytes.len() as u64 => {
+            queue.write_buffer(&g.vertices, 0, bytes);
+            g.vertices
+        }
+        _ => device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(label),
+            contents: bytes,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        }),
+    };
+    Some(Geometry { vertices: buffer, count: vertices.len() as u32 })
 }
 
 /// Grid on `plane` with heavier lines every 5 cells and its axes colored

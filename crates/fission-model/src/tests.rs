@@ -777,3 +777,17 @@ fn recropping_a_canvas_trims_without_moving_or_stretching() {
     let FeatureKind::Canvas { crop, .. } = &kind else { panic!() };
     assert!(crop[2] > crop[0] && crop[3] > crop[1], "{crop:?}");
 }
+
+#[test]
+fn appearance_alone_is_not_a_geometry_change() {
+    let doc = Document::sample();
+    let mut colored = doc.clone();
+    colored.features[1].color = Some([0.8, 0.2, 0.2]);
+    assert!(colored.same_except_appearance(&doc));
+    let mut moved = colored.clone();
+    moved.marker -= 1;
+    assert!(!moved.same_except_appearance(&doc));
+    let mut renamed = colored.clone();
+    renamed.features[0].name = "Other".into();
+    assert!(!renamed.same_except_appearance(&doc));
+}

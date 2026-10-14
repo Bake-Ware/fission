@@ -350,7 +350,16 @@ impl FissionApp {
         let before = self.doc.clone();
         change(&mut self.doc);
         if self.doc != before {
+            self.changed_from(&before);
             self.history.record(before);
+        }
+    }
+
+    /// `doc` was `before` until now. Appearance alone doesn't change any
+    /// body, and a full regeneration can take seconds, so it's skipped then:
+    /// the viewport reads colors from `doc` every frame.
+    fn changed_from(&mut self, before: &Document) {
+        if !self.doc.same_except_appearance(before) {
             self.changed();
         }
     }
@@ -1236,6 +1245,7 @@ impl FissionApp {
     pub fn open_appearance(&mut self) {
         let mut targets: Vec<usize> =
             self.viewport.selection.iter().filter_map(|p| self.bodies.get(p.body()).map(|b| b.created_by)).collect();
+        targets.sort_unstable();
         targets.dedup();
         self.appearance = Some(ui::appearance::AppearanceDialog { targets, custom: [0.6, 0.6, 0.65] });
     }
@@ -1595,13 +1605,15 @@ impl FissionApp {
             self.sketch_undo(false);
         } else if pressed(cmd_shift(Key::Z)) || pressed(cmd(Key::Y)) {
             self.finish_edit(true);
+            let before = self.doc.clone();
             if self.history.redo(&mut self.doc) {
-                self.changed();
+                self.changed_from(&before);
             }
         } else if pressed(cmd(Key::Z)) {
             self.finish_edit(true);
+            let before = self.doc.clone();
             if self.history.undo(&mut self.doc) {
-                self.changed();
+                self.changed_from(&before);
             }
         }
         if pressed(cmd_shift(Key::S)) {
@@ -1763,10 +1775,7 @@ impl eframe::App for FissionApp {
             self.viewport.body_colors = self
                 .bodies
                 .iter()
-                .map(|b| match self.doc.features.get(b.created_by).and_then(|f| f.color) {
-                    Some([r, g, b]) => [r, g, b, 1.0],
-                    None => [0.0; 4],
-                })
+                .map(|b| crate::viewport::appearance(self.doc.features.get(b.created_by).and_then(|f| f.color)))
                 .collect();
             let events = self.viewport.show(ui, &rs, &self.bodies, &extra);
 

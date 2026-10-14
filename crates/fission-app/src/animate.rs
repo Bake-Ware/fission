@@ -76,14 +76,8 @@ pub fn run(doc: &Document, kernel: &mut worker::Kernel, opts: &Options) -> Resul
     crate::ui::theme::use_dark(opts.dark);
     let (device, queue) = gpu()?;
     let mut renderer = ViewportRenderer::new(&device);
-    let colors: Vec<[f32; 4]> = regen
-        .bodies
-        .iter()
-        .map(|b| match doc.features.get(b.created_by).and_then(|f| f.color) {
-            Some([r, g, b]) => [r, g, b, 1.0],
-            None => [0.0; 4],
-        })
-        .collect();
+    let colors: Vec<[f32; 4]> =
+        regen.bodies.iter().map(|b| crate::viewport::appearance(doc.features.get(b.created_by).and_then(|f| f.color))).collect();
 
     let video = matches!(extension(&opts.out).as_str(), "gif" | "mp4" | "webm");
     let frames_dir = if video { opts.out.with_extension("frames") } else { opts.out.clone() };
@@ -96,7 +90,7 @@ pub fn run(doc: &Document, kernel: &mut worker::Kernel, opts: &Options) -> Resul
             .iter()
             .map(|b| if moving(b.created_by) { std::borrow::Cow::Owned(moved_mesh(&b.mesh, &t)) } else { std::borrow::Cow::Borrowed(&b.mesh) })
             .collect();
-        renderer.set_meshes(&device, meshes.iter().enumerate().map(|(k, m)| (k, m.as_ref())));
+        renderer.set_meshes(&device, &queue, meshes.iter().enumerate().map(|(k, m)| (k, m.as_ref())));
         let frame = Frame {
             view_proj: camera.view_proj(size),
             eye: camera.eye(),

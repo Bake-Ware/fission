@@ -840,7 +840,8 @@ pub struct Feature {
     /// `FeatureKind::values_mut`; sketch dimensions use `dim:<index>`).
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub exprs: std::collections::BTreeMap<String, String>,
-    /// Appearance (RGB 0..1) of the body this feature creates.
+    /// Appearance of the body this feature creates: sRGB 0..1, as color
+    /// pickers and swatches show it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<[f32; 3]>,
     /// Name of the body this feature creates (default: Body<n>).
@@ -1058,6 +1059,17 @@ impl Document {
             });
         }
         out
+    }
+
+    /// True when `self` and `other` differ at most in appearance, so they
+    /// build the same bodies and need no regeneration between them.
+    pub fn same_except_appearance(&self, other: &Document) -> bool {
+        let plain = |d: &Document| {
+            let mut d = d.clone();
+            d.features.iter_mut().for_each(|f| f.color = None);
+            d
+        };
+        self.features.len() == other.features.len() && plain(self) == plain(other)
     }
 
     /// Joints that are applied and unsuppressed, in timeline order. A joint
