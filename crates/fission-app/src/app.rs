@@ -838,7 +838,8 @@ impl FissionApp {
 
     pub fn new_move(&mut self) {
         let bodies = self.selected_bodies();
-        self.create(FeatureKind::Move { bodies, translate: [10.0, 0.0, 0.0], axis: Axis::Z, degrees: 0.0, copy: false });
+        // Starts in place: the gizmo moves it.
+        self.create_rigid(FeatureKind::Move { bodies, translate: [0.0; 3], axis: Axis::Z, degrees: 0.0, copy: false });
     }
 
     /// ASSEMBLE ▸ Joint: the selected bodies (or the last) hinge about the
@@ -849,7 +850,7 @@ impl FissionApp {
             Some(&(feature, origin, dir)) => Axis::Line { feature, origin, dir },
             None => Axis::X,
         };
-        self.create(FeatureKind::Joint { bodies, motion: fission_model::JointMotion::Revolute, axis, value: 0.0, min: -90.0, max: 90.0 });
+        self.create_rigid(FeatureKind::Joint { bodies, motion: fission_model::JointMotion::Revolute, axis, value: 0.0, min: -90.0, max: 90.0 });
     }
 
     /// MODIFY ▸ Scale: the selected bodies (or the last), about the origin.
@@ -948,6 +949,9 @@ impl FissionApp {
 
     /// Close the open dialog, keeping (OK) or discarding (Cancel) its changes.
     pub fn finish_edit(&mut self, keep: bool) {
+        if self.finish_rigid_fast(keep) {
+            return;
+        }
         if let Some(edit) = self.editing.take() {
             // The viewport may have been showing the pre-feature model.
             self.changed();

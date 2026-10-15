@@ -1088,7 +1088,19 @@ impl Document {
         }
         let joints = self.joints();
         let Some(moved) = joints.iter().find(|j| j.feature == feature) else { return false };
+        self.nothing_later_builds_on(feature, &moved.bodies)
+    }
+
+    /// True when no applied feature after `feature` builds on the bodies in
+    /// `moved` (by creating feature): later features are sketches, planes,
+    /// axes, points, canvases, or joints on other bodies. Moving those bodies
+    /// rigidly then gives exactly what regenerating would.
+    pub fn nothing_later_builds_on(&self, feature: usize, moved: &[usize]) -> bool {
+        let joints = self.joints();
         let end = self.marker.min(self.features.len());
+        if feature >= end {
+            return false;
+        }
         self.features[feature + 1..end].iter().enumerate().all(|(k, f)| {
             f.suppressed
                 || match &f.kind {
@@ -1102,7 +1114,7 @@ impl Document {
                     FeatureKind::Joint { .. } => joints
                         .iter()
                         .find(|j| j.feature == feature + 1 + k)
-                        .is_some_and(|j| j.bodies.iter().all(|b| !moved.bodies.contains(b))),
+                        .is_some_and(|j| j.bodies.iter().all(|b| !moved.contains(b))),
                     _ => false,
                 }
         })

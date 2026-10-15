@@ -1,7 +1,8 @@
 //! Move and Joint dialogs in the viewport. While one is open its bodies
 //! follow the dialog live (rigidly moved meshes, no regeneration until OK),
 //! and a gizmo drags them: arrows translate along X/Y/Z, rings rotate.
-//! Ctrl snaps to 1 mm and 15°.
+//! Drags snap: lengths to a round step that suits the zoom, angles to 5°;
+//! Shift snaps coarser (10× the step, 15°), Ctrl moves freely.
 
 use eframe::egui::{self, Color32, Pos2, Stroke};
 use fission_kernel::Mesh;
@@ -18,8 +19,47 @@ const ARROW: f64 = 90.0;
 const RING: f64 = 70.0;
 /// How close the pointer must be to grab a handle, in points.
 const GRAB: f32 = 7.0;
-const SNAP_MM: f64 = 1.0;
-const SNAP_DEG: f64 = 15.0;
+/// Snap steps for lengths (mm), the finest one at least this many points apart.
+const LENGTH_STEPS: [f64; 12] = [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0];
+const STEP_POINTS: f64 = 6.0;
+const SNAP_DEG: f64 = 5.0;
+const SNAP_DEG_COARSE: f64 = 15.0;
+
+/// What a drag snaps to.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct Snap {
+    mm: Option<f64>,
+    deg: Option<f64>,
+}
+
+impl Snap {
+    /// `wpp`: mm per screen point at the gizmo.
+    fn new(wpp: f64, coarse: bool, free: bool) -> Snap {
+        if free {
+            return Snap { mm: None, deg: None };
+        }
+        let fine = LENGTH_STEPS.iter().copied().find(|s| s / wpp >= STEP_POINTS).unwrap_or(1000.0);
+        if coarse {
+            Snap { mm: Some(fine * 10.0), deg: Some(SNAP_DEG_COARSE) }
+        } else {
+            Snap { mm: Some(fine), deg: Some(SNAP_DEG) }
+        }
+    }
+
+    fn length(&self, v: f64) -> f64 {
+        self.mm.map_or(v, |s| round_to(v, s))
+    }
+
+    fn angle(&self, v: f64) -> f64 {
+        self.deg.map_or(v, |s| round_to(v, s))
+    }
+}
+
+fn round_to(v: f64, step: f64) -> f64 {
+    // Rounded through the step's decimals, so 0.1 steps don't print as 0.30000000000000004.
+    let r = (v / step).round() * step;
+    (r * 1e6).round() / 1e6
+}
 
 /// The model just before the open Move/Joint (what the dialog moves).
 pub struct RigidBase {
@@ -114,6 +154,81 @@ impl FissionApp {
             self.rigid_base = Some(RigidBase { bodies, layout: None });
             self.refresh_rigid_preview();
         }
+    }
+
+    /// Open a new Move/Joint without rebuilding. When it goes at the end of
+    /// the timeline, the model before it is what's on screen already;
+    /// otherwise this is `create`, which rebuilds.
+    pub fn create_rigid(&mut self, kind: FeatureKind) {
+        self.end_joint_preview();
+        let appending = self.doc.marker >= self.doc.features.len();
+        if self.editing.is_some() || self.needs_regen || self.sketch.is_some() || !appending || self.bodies.is_empty() {
+            return self.create(kind);
+        }
+        let before = self.doc.clone();
+        let index = self.doc.push(kind);
+        self.editing = Some(crate::app::Edit { index, before, is_new: true });
+        self.selected_feature = Some(index);
+        self.edit_preview = false;
+        self.edit_base = self.model_bodies.clone();
+        let n = self.doc.features.len();
+        self.status.resize(n, fission_model::FeatureStatus::Ok);
+        self.import_parts.resize(n, 0);
+        self.import_part_faces.resize(n, Vec::new());
+        self.set_rigid_base();
+    }
+
+    /// Close an open Move/Joint without rebuilding, when the bodies on screen
+    /// are already the answer: OK on one that nothing later builds on (and
+    /// whose values follow no expressions), or Cancel on a new one, which
+    /// brings back the model from before it. False: rebuild as usual.
+    pub fn finish_rigid_fast(&mut self, keep: bool) -> bool {
+        let (Some(edit), Some(base)) = (&self.editing, &self.rigid_base) else { return false };
+        // Something asked for a rebuild (typing a value into the heads-up box, say).
+        if self.needs_regen {
+            return false;
+        }
+        let index = edit.index;
+        let Some(feature) = self.doc.features.get(index) else { return false };
+        if keep {
+            let Some((_, mut moving, _)) = rigid_of(&feature.kind, &self.regen_sketches) else { return false };
+            if moving.is_empty() {
+                moving.extend(base.bodies.last().map(|b| b.1));
+            }
+            if feature.suppressed || !feature.exprs.is_empty() || self.status.get(index).is_some_and(|s| *s != fission_model::FeatureStatus::Ok) {
+                return false;
+            }
+            if !self.doc.nothing_later_builds_on(index, &moving) {
+                return false;
+            }
+            let Some(edit) = self.editing.take() else { return false };
+            if self.doc != edit.before {
+                self.history.record(edit.before);
+            }
+        } else {
+            let appended = edit.is_new && edit.before.features.len() == index && edit.before.marker >= index;
+            if !appended {
+                return false;
+            }
+            let Some(edit) = self.editing.take() else { return false };
+            self.doc = edit.before;
+            self.selected_feature = None;
+            let base = self.rigid_base.take().map(|b| b.bodies).unwrap_or_default();
+            self.bodies = base
+                .into_iter()
+                .map(|(name, created_by, mesh)| DisplayBody { visible: !self.hidden.contains(&created_by), name, mesh, created_by })
+                .collect();
+            let n = self.doc.features.len();
+            self.status.truncate(n);
+            self.import_parts.truncate(n);
+            self.import_part_faces.truncate(n);
+        }
+        self.model_bodies = self.bodies.iter().map(|b| (b.name.clone(), b.created_by)).collect();
+        self.rigid_base = None;
+        self.gizmo_drag = None;
+        self.needs_regen = false;
+        self.viewport.bodies_changed(&self.bodies);
+        true
     }
 
     /// Show the open Move/Joint's bodies where its values put them.
@@ -260,7 +375,7 @@ impl FissionApp {
                 }
             })
             .collect();
-        let (pointer, press, ctrl) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.press_origin(), i.modifiers.command));
+        let (pointer, press, snap) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.press_origin(), Snap::new(wpp, i.modifiers.shift, i.modifiers.command)));
         let near = |p: Pos2| {
             shapes
                 .iter()
@@ -324,19 +439,12 @@ impl FissionApp {
                         match &mut kind {
                             FeatureKind::Move { translate, .. } => {
                                 let k = (0..3).find(|&k| DVec3::AXES[k] == dir).unwrap_or(0);
-                                let mut t = translate[k] + by;
-                                if ctrl {
-                                    t = (t / SNAP_MM).round() * SNAP_MM;
-                                }
+                                let t = snap.length(translate[k] + by);
                                 translate[k] = t;
                                 label = Some(format!("{} {t:.2} mm", ["X", "Y", "Z"][k]));
                             }
                             FeatureKind::Joint { value, min, max, .. } => {
-                                let mut v = *value + by;
-                                if ctrl {
-                                    v = (v / SNAP_MM).round() * SNAP_MM;
-                                }
-                                *value = v.clamp(*min, *max);
+                                *value = snap.length(*value + by).clamp(*min, *max);
                                 label = Some(format!("{:.2} mm", *value));
                             }
                             _ => {}
@@ -358,7 +466,7 @@ impl FissionApp {
                         Some((t, per_radian, from)) => ((p - from).dot(t) as f64 / per_radian).to_degrees(),
                         None => -drag.turned.to_degrees() * if facing { 1.0 } else { -1.0 },
                     };
-                    let snap = |d: f64| if ctrl { (d / SNAP_DEG).round() * SNAP_DEG } else { d };
+                    let snap = |d: f64| snap.angle(d);
                     match &mut kind {
                         FeatureKind::Move { axis, degrees, translate, .. } => {
                             if let Some(a) = origin_axis {
@@ -462,6 +570,19 @@ mod tests {
         // Along the line itself: no answer.
         let along = Ray { origin: Vec3::new(0.0, 0.0, 0.0), dir: Vec3::X };
         assert!(closest_on_line(DVec3::ZERO, DVec3::X, &along).is_none());
+    }
+
+    #[test]
+    fn snaps_to_round_steps_that_suit_the_zoom() {
+        // 0.05 mm per point: 0.5 mm is the first step 6 points apart.
+        let s = Snap::new(0.05, false, false);
+        assert_eq!(s.mm, Some(0.5));
+        assert_eq!(s.length(12.34), 12.5);
+        assert_eq!(s.angle(37.0), 35.0);
+        let coarse = Snap::new(0.05, true, false);
+        assert_eq!((coarse.mm, coarse.angle(37.0)), (Some(5.0), 30.0));
+        assert_eq!(Snap::new(0.05, false, true).length(12.34), 12.34, "Ctrl: free");
+        assert_eq!(Snap::new(0.01, false, false).length(0.33), 0.3);
     }
 
     #[test]
