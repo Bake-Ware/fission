@@ -1,6 +1,7 @@
 mod animate;
 mod app;
 mod export;
+mod gizmo;
 mod motion;
 mod png;
 mod ui;

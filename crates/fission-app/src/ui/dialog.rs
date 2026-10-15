@@ -102,7 +102,12 @@ pub fn show(app: &mut FissionApp, ctx: &egui::Context, viewport: Rect) {
         });
 
     if changed {
-        app.changed();
+        // Move and Joint only move bodies: shown without rebuilding until OK.
+        if app.editing_rigid() && app.rigid_base.is_some() {
+            app.refresh_rigid_preview();
+        } else {
+            app.changed();
+        }
     }
     if let Some(keep) = close {
         app.finish_edit(keep);
@@ -374,7 +379,6 @@ fn fields(
                 bodies.clear();
                 changed = true;
             }
-            changed |= preview_row(ui, preview);
             for (label, k) in [("X distance", 0), ("Y distance", 1), ("Z distance", 2)] {
                 ui.label(label);
                 changed |= length(ui, &mut translate[k], None);
@@ -447,7 +451,6 @@ fn fields(
                 bodies.clear();
                 changed = true;
             }
-            changed |= preview_row(ui, preview);
             ui.label("Motion");
             egui::ComboBox::from_id_salt("joint_motion").selected_text(motion.label()).show_ui(ui, |ui| {
                 for m in [JointMotion::Revolute, JointMotion::Slider] {

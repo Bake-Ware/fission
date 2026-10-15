@@ -84,6 +84,9 @@ pub struct FissionApp {
     pub joint_preview: Option<crate::motion::JointPreview>,
     /// Decoded reference images, by path.
     pub canvas_store: ui::canvas::CanvasStore,
+    /// With a Move/Joint dialog open: the model before it, which follows the dialog.
+    pub rigid_base: Option<crate::gizmo::RigidBase>,
+    pub gizmo_drag: Option<crate::gizmo::GizmoDrag>,
 }
 
 impl FissionApp {
@@ -125,6 +128,8 @@ impl FissionApp {
             hud: None,
             joint_preview: None,
             canvas_store: Default::default(),
+            rigid_base: None,
+            gizmo_drag: None,
         };
         if let Some(path) = path {
             app.open_path(&path);
@@ -410,6 +415,8 @@ impl FissionApp {
         // New meshes replace any joint preview's.
         self.joint_preview = None;
         self.refresh_canvases();
+        // A Move/Joint dialog shows its bodies moved from here on, without rebuilding.
+        self.set_rigid_base();
         self.viewport.bodies_changed(&self.bodies);
         if self.first_regen {
             self.viewport.fit_all(&self.bodies);
@@ -619,7 +626,11 @@ impl FissionApp {
             return;
         }
         if self.editing_pick_feature() && !self.edit_preview && self.pick_into_feature(pick) {
-            self.changed();
+            if self.editing_rigid() {
+                self.refresh_rigid_preview();
+            } else {
+                self.changed();
+            }
             return;
         }
         if self.editing_pick_feature() && !self.edit_preview {
@@ -647,6 +658,7 @@ impl FissionApp {
     /// `handle_click`). Returns whether the pick was used.
     fn pick_into_feature(&mut self, pick: Pick) -> bool {
         let body_owner = self.bodies.get(pick.body()).map(|b| b.created_by);
+        let edited = self.editing.as_ref().map_or(usize::MAX, |e| e.index);
         let face_ref = match pick {
             Pick::Face(hit) => self.bodies.get(hit.body).and_then(|b| {
                 let hint = b.mesh.face_hints.get(hit.face as usize)?;
@@ -704,10 +716,14 @@ impl FissionApp {
                 }
                 true
             }
+            Some(FeatureKind::Move { bodies, .. } | FeatureKind::Joint { bodies, .. }) => {
+                // A copy the preview shows belongs to the Move itself.
+                let Some(owner) = body_owner.filter(|&o| o < edited) else { return true };
+                toggle(bodies, owner);
+                true
+            }
             Some(
-                FeatureKind::Move { bodies, .. }
-                | FeatureKind::Joint { bodies, .. }
-                | FeatureKind::Mirror { bodies, .. }
+                FeatureKind::Mirror { bodies, .. }
                 | FeatureKind::Pattern { bodies, .. }
                 | FeatureKind::Scale { bodies, .. },
             ) => {
@@ -1815,6 +1831,8 @@ impl eframe::App for FissionApp {
                     // Click went to profile selection.
                 } else if events.primary_clicked && loft_sweep.is_some() && self.pick_loft_sweep() {
                     // Click picked a loft profile or the sweep's path.
+                } else if self.rigid_gizmo(ui, &events) {
+                    // The pointer is on the Move/Joint gizmo.
                 } else if let Some((pick, toggle)) = events.clicked {
                     self.handle_click(pick, toggle);
                 } else if events.clicked_empty && self.editing.is_none() {

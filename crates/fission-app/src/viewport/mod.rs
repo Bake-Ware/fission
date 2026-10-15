@@ -78,6 +78,8 @@ pub struct Viewport {
     pub selection: Vec<Pick>,
     /// Off while sketching: the sketch tools pick 2D geometry themselves.
     pub pick_enabled: bool,
+    /// The pointer was on a gizmo handle last frame: nothing under it is hovered.
+    pub hover_blocked: bool,
     /// Screen rect and pointer (viewport-local) from the last frame.
     pub rect: Rect,
     pub pointer: Option<Vec2>,
@@ -102,6 +104,7 @@ impl Viewport {
             hovered: None,
             selection: Vec::new(),
             pick_enabled: true,
+            hover_blocked: false,
             rect: Rect::NOTHING,
             pointer: None,
             meshes_dirty: true,
@@ -327,7 +330,7 @@ impl Viewport {
             if scroll != 0.0 {
                 self.camera.zoom_at((-scroll * 0.0025).exp(), local, size);
             }
-            if !self.pick_enabled {
+            if !self.pick_enabled || self.hover_blocked {
                 self.hovered = None;
             } else if !response.dragged() {
                 let visible = bodies.iter().enumerate().filter(|(_, b)| b.visible).map(|(i, b)| (i, &b.mesh));
