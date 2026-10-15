@@ -47,7 +47,8 @@ fn main() -> ExitCode {
         }
         Some(path) if !path.starts_with('-') => run_gui(Some(PathBuf::from(path))),
         Some(_) => usage_error(),
-        None => run_gui(None),
+        // Reopen the last design, unless a demo script sets the scene.
+        None => run_gui(std::env::var_os("FISSION_DEMO").is_none().then(app::last_file).flatten()),
     }
 }
 

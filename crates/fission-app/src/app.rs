@@ -1483,6 +1483,7 @@ impl FissionApp {
                 self.saved = doc.clone();
                 self.doc = doc;
                 self.path = Some(path.to_path_buf());
+                remember_last_file(path);
                 self.selected_feature = None;
                 self.first_regen = true;
                 self.changed();
@@ -1509,6 +1510,7 @@ impl FissionApp {
             Ok(()) => {
                 self.saved = self.doc.clone();
                 self.notify(format!("Saved {}", path.display()), false);
+                remember_last_file(&path);
                 self.path = Some(path);
             }
             Err(e) => self.notify(format!("Couldn't save: {e}"), true),
@@ -1852,6 +1854,30 @@ impl eframe::App for FissionApp {
             self.toast = None;
         }
     }
+}
+
+/// Where the last opened or saved design's path is kept.
+fn last_file_record() -> Option<PathBuf> {
+    let state = match std::env::var_os("XDG_STATE_HOME") {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => PathBuf::from(std::env::var_os("HOME")?).join(".local/state"),
+    };
+    Some(state.join("fission").join("last-file"))
+}
+
+fn remember_last_file(path: &Path) {
+    let Some(record) = last_file_record() else { return };
+    let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let written = record.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| std::fs::write(&record, path.to_string_lossy().as_bytes()));
+    if let Err(e) = written {
+        log::warn!("can't remember the last file in {}: {e}", record.display());
+    }
+}
+
+/// The design to reopen on a launch without one, if it still exists.
+pub fn last_file() -> Option<PathBuf> {
+    let path = PathBuf::from(std::fs::read_to_string(last_file_record()?).ok()?.trim());
+    path.is_file().then_some(path)
 }
 
 fn demo_point(arg: &str) -> Option<[f64; 2]> {
