@@ -260,7 +260,7 @@ Fission contains **no Autodesk code, icons, assets or text**. The UI was rebuilt
 cargo test --release --workspace --exclude opencascade
 ```
 
-There are 165 tests. They cover the sketch solver and every sketch tool, typed-value expressions, timeline semantics on a fake kernel (rollback, suppress, errors, undo, save/load, reference remapping), construction geometry, and real OCCT geometry: fillets, shells, drafts, holes, threads (checked watertight), coils, splits, exact areas and volumes, STEP round trips. Tests that decode and replay real `.f3d` files run when samples are present. Put them in `$FISSION_SAMPLES` (`flathex.f3d`, `clouds.f3d`, `camera.f3d`), or `out/f3d`.
+There are 166 tests. They cover the sketch solver and every sketch tool, typed-value expressions, timeline semantics on a fake kernel (rollback, suppress, errors, undo, save/load, reference remapping), construction geometry, and real OCCT geometry: fillets, shells, drafts, holes, threads (checked watertight), coils, splits, exact areas and volumes, STEP round trips. Tests that decode and replay real `.f3d` files run when samples are present. Put them in `$FISSION_SAMPLES` (`flathex.f3d`, `clouds.f3d`, `camera.f3d`), or `out/f3d`.
 
 `tools/stl/check_stl.py` checks that an exported mesh is printable: closed, consistently oriented, with its volume and bounding box. `tools/stl/flatten_orca.py` resolves OrcaSlicer preset inheritance so the slicer CLI can run in CI.
 
@@ -331,11 +331,14 @@ Commands (hotkeys follow Fusion):
   chain with it; also under Simplify ▸ Remove Faces). Select edges,
   faces or bodies first, or click them while the dialog is open. The dialog
   then shows the model *before* the feature so you can pick on it; tick
-  **Preview result** to see the outcome. Move/Copy and Joint dialogs show
-  the bodies moving live without rebuilding (one rebuild on OK), with a
-  gizmo: drag the X/Y/Z arrows to slide and the rings to turn in place
-  (a joint gets one ring or arrow for its axis); hold Ctrl to snap to 1 mm
-  and 15°.
+  **Preview result** to see the outcome. Move/Copy and Joint dialogs open
+  instantly and show the bodies moving live without rebuilding (OK and
+  Cancel don't rebuild either when nothing later in the timeline builds on
+  the moved bodies), with a gizmo: drag the X/Y/Z arrows to slide and the
+  rings to turn in place (a joint gets one ring or arrow for its axis).
+  Drags snap: lengths to a round step that suits the zoom (0.1, 0.25, 0.5,
+  1, 2, 5, 10 … mm), angles to 5°. Hold Shift for coarser steps (10× the
+  length step, 15°), Ctrl to move freely.
 - **CONSTRUCT**: Offset Plane (from the selected face, or XY), Plane at
   Angle (hinged on the selected straight edge, or XY's X axis; type the
   angle), Midplane (between two selected parallel faces). Sketches can
