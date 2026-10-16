@@ -162,7 +162,7 @@ impl FissionApp {
     pub fn create_rigid(&mut self, kind: FeatureKind) {
         self.end_joint_preview();
         let appending = self.doc.marker >= self.doc.features.len();
-        if self.editing.is_some() || self.needs_regen || self.sketch.is_some() || !appending || self.bodies.is_empty() {
+        if self.editing.is_some() || self.regen_busy() || self.sketch.is_some() || !appending || self.bodies.is_empty() {
             return self.create(kind);
         }
         let before = self.doc.clone();
@@ -185,7 +185,7 @@ impl FissionApp {
     pub fn finish_rigid_fast(&mut self, keep: bool) -> bool {
         let (Some(edit), Some(base)) = (&self.editing, &self.rigid_base) else { return false };
         // Something asked for a rebuild (typing a value into the heads-up box, say).
-        if self.needs_regen {
+        if self.regen_busy() {
             return false;
         }
         let index = edit.index;
@@ -198,7 +198,9 @@ impl FissionApp {
             if feature.suppressed || !feature.exprs.is_empty() || self.status.get(index).is_some_and(|s| *s != fission_model::FeatureStatus::Ok) {
                 return false;
             }
-            if !self.doc.nothing_later_builds_on(index, &moving) {
+            // Later features are rolled back while a dialog is open, so the
+            // bodies on screen are the whole answer only for the last one.
+            if index + 1 < self.doc.marker.min(self.doc.features.len()) || !self.doc.nothing_later_builds_on(index, &moving) {
                 return false;
             }
             let Some(edit) = self.editing.take() else { return false };

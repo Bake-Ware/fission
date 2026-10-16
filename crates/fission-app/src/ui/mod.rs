@@ -42,6 +42,19 @@ pub fn overlay(app: &FissionApp, ui: &mut egui::Ui, viewport: Rect) {
         painter.galley(rect.center() - galley.size() / 2.0, galley, color);
     }
 
+    // A rebuild long enough to notice: say so at the top of the viewport.
+    match app.rebuilding_for() {
+        Some(t) if t > std::time::Duration::from_millis(250) => {
+            let rect = Rect::from_center_size(egui::pos2(viewport.center().x, viewport.min.y + 22.0), egui::vec2(124.0, 26.0));
+            painter.rect_filled(rect, 4.0, theme::panel());
+            painter.rect_stroke(rect, 4.0, egui::Stroke::new(1.0, theme::border()), egui::StrokeKind::Inside);
+            ui.put(Rect::from_center_size(rect.left_center() + egui::vec2(16.0, 0.0), egui::vec2(14.0, 14.0)), egui::Spinner::new().size(14.0));
+            painter.text(rect.left_center() + egui::vec2(30.0, 0.0), egui::Align2::LEFT_CENTER, "Rebuilding…", egui::FontId::proportional(13.0), theme::text());
+        }
+        Some(_) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(260)),
+        None => {}
+    }
+
     // Sketch status: active tool, constraint state, last message.
     if let Some(session) = &app.sketch {
         let dof = if session.dof == 0 { "Fully constrained".to_string() } else { format!("{} degrees of freedom", session.dof) };

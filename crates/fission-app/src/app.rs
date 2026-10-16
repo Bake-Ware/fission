@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers};
@@ -31,9 +32,20 @@ pub struct Toast {
     pub until: Instant,
 }
 
+/// A regeneration running on a background thread, so the window stays live.
+pub(crate) struct RegenJob {
+    /// The document it's building (expressions applied).
+    doc: Document,
+    base_marker: Option<usize>,
+    started: Instant,
+    result: mpsc::Receiver<Result<worker::RegenResult, String>>,
+}
+
 pub struct FissionApp {
-    /// The geometry kernel, in a crash-isolated worker process.
-    pub kernel: worker::Kernel,
+    /// The geometry kernel, in a crash-isolated worker process. Shared with
+    /// the regeneration thread.
+    kernel: Arc<Mutex<worker::Kernel>>,
+    pub(crate) regen_job: Option<RegenJob>,
     pub doc: Document,
     pub history: History,
     pub path: Option<PathBuf>,
@@ -95,7 +107,8 @@ impl FissionApp {
         let render_state = cc.wgpu_render_state.clone().expect("fission needs the wgpu renderer");
 
         let mut app = FissionApp {
-            kernel: worker::Kernel::new(),
+            kernel: Arc::new(Mutex::new(worker::Kernel::new())),
+            regen_job: None,
             doc: Document::sample(),
             history: History::default(),
             path: None,
@@ -363,14 +376,62 @@ impl FissionApp {
     /// `doc` was `before` until now. Appearance alone doesn't change any
     /// body, and a full regeneration can take seconds, so it's skipped then:
     /// the viewport reads colors from `doc` every frame.
-    fn changed_from(&mut self, before: &Document) {
+    pub fn changed_from(&mut self, before: &Document) {
         if !self.doc.same_except_appearance(before) {
             self.changed();
         }
     }
 
+    /// The kernel, waiting for a regeneration in progress to finish.
+    pub fn kernel(&self) -> MutexGuard<'_, worker::Kernel> {
+        self.kernel.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Changes are waiting to be rebuilt, or being rebuilt: what's on screen
+    /// may not be the document yet.
+    pub fn regen_busy(&self) -> bool {
+        self.needs_regen || self.regen_job.is_some()
+    }
+
+    /// How long the background rebuild has been running, if one is.
+    pub fn rebuilding_for(&self) -> Option<Duration> {
+        self.regen_job.as_ref().map(|j| j.started.elapsed())
+    }
+
+    /// Rebuild now, waiting for the result (scripted steps and tests).
     fn regenerate(&mut self) {
-        let start = Instant::now();
+        if let Some(job) = self.regen_job.take() {
+            let _ = job.result.recv();
+        }
+        self.start_regen(None);
+        if let Some(job) = self.regen_job.take() {
+            let result = job.result.recv().unwrap_or_else(|_| Err("the rebuild thread stopped".into()));
+            self.finish_regen(job, result);
+        }
+    }
+
+    /// Once a frame: take a finished rebuild, and start one if the document
+    /// changed. Nothing rebuilds while a sketch is open: only finishing it does.
+    fn poll_regen(&mut self, ctx: &egui::Context) {
+        if let Some(job) = &self.regen_job {
+            match job.result.try_recv() {
+                Ok(result) => {
+                    let job = self.regen_job.take().unwrap();
+                    self.finish_regen(job, result);
+                }
+                Err(mpsc::TryRecvError::Empty) => return,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.regen_job = None;
+                    self.notify("the rebuild thread stopped", true);
+                }
+            }
+        }
+        if self.needs_regen && self.sketch.is_none() {
+            self.start_regen(Some(ctx.clone()));
+        }
+    }
+
+    fn start_regen(&mut self, ctx: Option<egui::Context>) {
         // While editing, also build the model as it was just before the
         // feature: its bodies are the dialog's targets, and pick features
         // pick on it.
@@ -380,11 +441,44 @@ impl FissionApp {
         if let Some(p) = problems.first() {
             self.notify(p.clone(), true);
         }
-        let result = match self.kernel.regenerate(&self.doc, base_marker) {
+        let doc = self.doc.clone();
+        // As in Fusion, the timeline rolls back to the feature being edited:
+        // what follows it rebuilds on OK, not on every change in the dialog.
+        // A dialog picking on the model before its feature (without Preview)
+        // doesn't show the feature, so that isn't built either.
+        let mut job_doc = doc.clone();
+        if let Some(i) = base_marker {
+            let shown = if self.editing_pick_feature() && !self.edit_preview { i } else { i + 1 };
+            job_doc.marker = job_doc.marker.min(shown);
+        }
+        let (send, result) = mpsc::channel();
+        let kernel = self.kernel.clone();
+        std::thread::spawn(move || {
+            let result = kernel.lock().unwrap_or_else(|e| e.into_inner()).regenerate(&job_doc, base_marker);
+            let _ = send.send(result);
+            if let Some(ctx) = ctx {
+                ctx.request_repaint();
+            }
+        });
+        self.regen_job = Some(RegenJob { doc, base_marker, started: Instant::now(), result });
+        self.needs_regen = false;
+    }
+
+    fn finish_regen(&mut self, job: RegenJob, result: Result<worker::RegenResult, String>) {
+        // Changed again meanwhile: build again. A result for the same
+        // features still shows, so a long drag shows progress; one for a
+        // different timeline (or a newly opened design) is dropped.
+        let current = self.doc == job.doc && job.base_marker == self.editing.as_ref().map(|e| e.index);
+        if !current {
+            self.needs_regen = true;
+            if job.doc.features.len() != self.doc.features.len() || job.base_marker != self.editing.as_ref().map(|e| e.index) || self.first_regen {
+                return;
+            }
+        }
+        let result = match result {
             Ok(result) => result,
             Err(e) => {
                 self.notify(e, true);
-                self.needs_regen = false;
                 return;
             }
         };
@@ -394,7 +488,7 @@ impl FissionApp {
         self.status = result.status;
         self.import_parts = result.parts;
         self.import_part_faces = result.part_faces;
-        self.regen_sketches = self.doc.sketch_outputs();
+        self.regen_sketches = job.doc.sketch_outputs();
         self.model_bodies = result.bodies.iter().map(|b| (b.name.clone(), b.created_by)).collect();
         self.edit_base = result.base.iter().flatten().map(|b| (b.name.clone(), b.created_by)).collect();
 
@@ -411,7 +505,7 @@ impl FissionApp {
                 created_by: b.created_by,
             })
             .collect();
-        self.regen_ms = start.elapsed().as_secs_f32() * 1000.0;
+        self.regen_ms = job.started.elapsed().as_secs_f32() * 1000.0;
         // New meshes replace any joint preview's.
         self.joint_preview = None;
         self.refresh_canvases();
@@ -422,7 +516,6 @@ impl FissionApp {
             self.viewport.fit_all(&self.bodies);
             self.first_regen = false;
         }
-        self.needs_regen = false;
     }
 
     pub fn set_body_visible(&mut self, created_by: usize, visible: bool) {
@@ -1432,7 +1525,7 @@ impl FissionApp {
             let name = stem.trim_start_matches('_').split('.').next().unwrap_or(stem).to_string();
             // Converted here, with rebuilds through the crash-proof worker.
             let converted = fission_f3d::read_timeline(path).map_err(|e| e.to_string()).map(|t| {
-                let kernel = &mut self.kernel;
+                let mut kernel = self.kernel();
                 let mut rebuild = |doc: &Document| -> Vec<(usize, Mesh)> {
                     match kernel.regenerate(doc, None) {
                         Ok(r) => r.bodies.into_iter().map(|b| (b.created_by, b.mesh)).collect(),
@@ -1607,7 +1700,8 @@ impl FissionApp {
             .save_file();
         if let Some(path) = file {
             let hidden: Vec<usize> = self.hidden.iter().copied().collect();
-            match self.kernel.export(&self.doc, &hidden, &path) {
+            let exported = self.kernel().export(&self.doc, &hidden, &path);
+            match exported {
                 Ok(()) => self.notify(format!("Exported {}", path.display()), false),
                 Err(e) => self.notify(format!("Export failed: {e}"), true),
             }
@@ -1770,9 +1864,7 @@ impl eframe::App for FissionApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.shortcuts(&ctx);
-        if self.needs_regen {
-            self.regenerate();
-        }
+        self.poll_regen(&ctx);
         if self.tick_joint_play() {
             ctx.request_repaint();
         }

@@ -252,15 +252,17 @@ fn menu_bar(app: &mut FissionApp, ui: &mut egui::Ui) {
             let undo = ui.add_enabled(app.history.can_undo(), egui::Button::new("Undo").shortcut_text("Ctrl+Z"));
             if undo.clicked() {
                 app.finish_edit(true);
+                let before = app.doc.clone();
                 if app.history.undo(&mut app.doc) {
-                    app.changed();
+                    app.changed_from(&before);
                 }
             }
             let redo = ui.add_enabled(app.history.can_redo(), egui::Button::new("Redo").shortcut_text("Ctrl+Y"));
             if redo.clicked() {
                 app.finish_edit(true);
+                let before = app.doc.clone();
                 if app.history.redo(&mut app.doc) {
-                    app.changed();
+                    app.changed_from(&before);
                 }
             }
         });

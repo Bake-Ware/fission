@@ -226,8 +226,14 @@ enum ChipAction {
 
 fn info(app: &FissionApp, ui: &mut egui::Ui) {
     let tris: usize = app.bodies.iter().filter(|b| b.visible).map(|b| b.mesh.triangle_count()).sum();
-    ui.label(RichText::new(format!("{:.0} ms · {tris} tris", app.regen_ms)).small().color(theme::muted()))
-        .on_hover_text("Last regeneration time and displayed triangles");
+    if app.regen_job.is_some() {
+        ui.spinner();
+        ui.label(RichText::new("Rebuilding…").small().color(theme::muted()))
+            .on_hover_text("The model is rebuilding in the background; it updates when done");
+    } else {
+        ui.label(RichText::new(format!("{:.0} ms · {tris} tris", app.regen_ms)).small().color(theme::muted()))
+            .on_hover_text("Last regeneration time and displayed triangles");
+    }
     let shown = app.viewport.hovered.or(app.viewport.selection.last().copied());
     let Some(pick) = shown else { return };
     let name = app.bodies.get(pick.body()).map_or("?", |b| b.name.as_str());

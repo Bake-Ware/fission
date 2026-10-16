@@ -8,6 +8,7 @@
 //! Transport is loopback TCP with length-prefixed postcard frames. Not stdio,
 //! because OCCT prints to stdout.
 
+use std::collections::HashMap;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
@@ -15,8 +16,8 @@ use std::process::{Child, Command, ExitCode, Stdio};
 use std::time::{Duration, Instant};
 
 use fission_kernel::{Kernel as _, Mesh};
-use fission_model::{Document, FeatureStatus};
-use fission_occt::Occt;
+use fission_model::{Document, FeatureStatus, RegenCache};
+use fission_occt::{Occt, Solid};
 use serde::{Deserialize, Serialize};
 
 /// Linear deflection for display meshes, in mm.
@@ -81,14 +82,15 @@ pub fn run_worker(port: &str) -> ExitCode {
     let _ = stream.set_nodelay(true);
     let mut reader = BufReader::new(stream.try_clone().expect("clone socket"));
     let mut writer = BufWriter::new(stream);
-    let kernel = Occt;
+    let mut state = Worker { kernel: Occt, cache: RegenCache::default(), meshes: HashMap::new() };
     while let Ok(request) = read_frame::<Request>(&mut reader) {
         let reply = match request {
-            Request::Regen { doc, base_marker } => regen(&kernel, &doc, base_marker),
-            Request::Export { doc, hidden, path } => Reply::Export(export(&kernel, &doc, &hidden, Path::new(&path))),
+            Request::Regen { doc, base_marker } => state.regen(&doc, base_marker),
+            Request::Export { doc, hidden, path } => Reply::Export(state.export(&doc, &hidden, Path::new(&path))),
             Request::Sweep { doc, joint, values, tolerance } => Reply::Sweep(parse(&doc).and_then(|doc| {
                 let joint = doc.joint(&joint)?;
-                doc.sweep_joint(&kernel, &joint, &values, tolerance)
+                let regen = doc.regenerate_cached(&state.kernel, &mut state.cache);
+                doc.sweep_joint_in(&state.kernel, &regen, &joint, &values, tolerance)
             })),
         };
         if write_frame(&mut writer, &reply).is_err() {
@@ -102,44 +104,79 @@ fn parse(doc: &str) -> Result<Document, String> {
     Document::from_ron(doc).map_err(|e| e.to_string())
 }
 
-fn mesh_bodies(kernel: &Occt, bodies: Vec<fission_model::Body<fission_occt::Solid>>, errors: &mut Vec<String>) -> Vec<MeshBody> {
-    bodies
-        .into_iter()
-        .map(|b| {
-            let mesh = kernel.tessellate(&b.solid, DISPLAY_TOLERANCE).unwrap_or_else(|e| {
-                errors.push(format!("{}: {e}", b.name));
-                Mesh::default()
-            });
-            if mesh.skipped_faces > 0 {
-                errors.push(format!("{}: {} face(s) couldn't be displayed", b.name, mesh.skipped_faces));
+/// The worker's memory between requests: the model after each feature of
+/// recent regenerations, and display meshes by solid, so an edit rebuilds
+/// and re-tessellates only what it changed.
+struct Worker {
+    kernel: Occt,
+    cache: RegenCache<Solid>,
+    /// By solid identity; holding the solid keeps its address from being reused.
+    meshes: MeshCache,
+}
+
+/// Display meshes by the address of their solid.
+type MeshCache = HashMap<usize, (Solid, Mesh)>;
+
+impl Worker {
+    fn mesh_bodies(&self, bodies: Vec<fission_model::Body<Solid>>, fresh: &mut MeshCache, errors: &mut Vec<String>) -> Vec<MeshBody> {
+        bodies
+            .into_iter()
+            .map(|b| {
+                let key = std::rc::Rc::as_ptr(&b.solid) as usize;
+                let cached = fresh.get(&key).or_else(|| self.meshes.get(&key)).map(|(_, m)| m.clone());
+                let mesh = match cached {
+                    Some(mesh) => mesh,
+                    None => match self.kernel.tessellate(&b.solid, DISPLAY_TOLERANCE) {
+                        Ok(mesh) => mesh,
+                        Err(e) => {
+                            errors.push(format!("{}: {e}", b.name));
+                            Mesh::default()
+                        }
+                    },
+                };
+                if mesh.skipped_faces > 0 {
+                    errors.push(format!("{}: {} face(s) couldn't be displayed", b.name, mesh.skipped_faces));
+                }
+                fresh.insert(key, (b.solid.clone(), mesh.clone()));
+                MeshBody { name: b.name, created_by: b.created_by, mesh }
+            })
+            .collect()
+    }
+
+    fn regen(&mut self, doc: &str, base_marker: Option<usize>) -> Reply {
+        let doc = match parse(doc) {
+            Ok(doc) => doc,
+            Err(e) => return Reply::Regen { status: vec![], parts: vec![], part_faces: vec![], bodies: vec![], base: None, errors: vec![e] },
+        };
+        let mut errors = Vec::new();
+        let full = doc.regenerate_cached(&self.kernel, &mut self.cache);
+        // The model just before a feature being edited comes from the cache.
+        let base = base_marker.map(|m| {
+            let mut d = doc.clone();
+            d.marker = m.min(d.features.len());
+            d.regenerate_cached(&self.kernel, &mut self.cache).bodies
+        });
+        let mut fresh = HashMap::new();
+        let bodies = self.mesh_bodies(full.bodies, &mut fresh, &mut errors);
+        let base = base.map(|b| self.mesh_bodies(b, &mut fresh, &mut errors));
+        // Also keep meshes of solids the cache still holds (the model from
+        // before an edit, for Cancel); the rest are gone for good.
+        for (key, entry) in self.meshes.drain() {
+            if std::rc::Rc::strong_count(&entry.0) > 1 {
+                fresh.entry(key).or_insert(entry);
             }
-            MeshBody { name: b.name, created_by: b.created_by, mesh }
-        })
-        .collect()
-}
+        }
+        self.meshes = fresh;
+        Reply::Regen { status: full.status, parts: full.parts, part_faces: full.part_faces, bodies, base, errors }
+    }
 
-fn regen(kernel: &Occt, doc: &str, base_marker: Option<usize>) -> Reply {
-    let doc = match parse(doc) {
-        Ok(doc) => doc,
-        Err(e) => return Reply::Regen { status: vec![], parts: vec![], part_faces: vec![], bodies: vec![], base: None, errors: vec![e] },
-    };
-    let mut errors = Vec::new();
-    let full = doc.regenerate(kernel);
-    let bodies = mesh_bodies(kernel, full.bodies, &mut errors);
-    let base = base_marker.map(|m| {
-        let mut d = doc.clone();
-        d.marker = m.min(d.features.len());
-        mesh_bodies(kernel, d.regenerate(kernel).bodies, &mut errors)
-    });
-    Reply::Regen { status: full.status, parts: full.parts, part_faces: full.part_faces, bodies, base, errors }
-}
-
-fn export(kernel: &Occt, doc: &str, hidden: &[usize], path: &Path) -> Result<(), String> {
-    let doc = parse(doc)?;
-    let regen = doc.regenerate(kernel);
-    let bodies: Vec<_> =
-        regen.bodies.iter().filter(|b| !hidden.contains(&b.created_by)).map(|b| (b.name.clone(), b.solid.clone())).collect();
-    crate::app::export(kernel, &bodies, path)
+    fn export(&mut self, doc: &str, hidden: &[usize], path: &Path) -> Result<(), String> {
+        let doc = parse(doc)?;
+        let regen = doc.regenerate_cached(&self.kernel, &mut self.cache);
+        let bodies: Vec<_> =
+            regen.bodies.iter().filter(|b| !hidden.contains(&b.created_by)).map(|b| (b.name.clone(), b.solid.clone())).collect();
+        crate::app::export(&self.kernel, &bodies, path)
+    }
 }
 
 // ---- app side ----

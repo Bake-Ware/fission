@@ -243,6 +243,7 @@ flowchart LR
 - **Failures never crash.** OCCT's C++ exceptions are caught in the shim, inputs are validated, and results are checked with `BRepCheck` and healed with `ShapeFix`. OCCT also *segfaults* on some valid input, so the kernel runs out-of-process: the app restarts it and isolates the culprit feature.
 - **Stable references.** Picked edges and faces are stored as geometry (a point plus a direction), and they re-resolve after every rebuild. They follow upstream edits and report "lost" instead of picking the wrong thing. Inserting, deleting and reordering features remaps every reference.
 - **Booleans merge coplanar faces**, as Fusion's do. Otherwise fillets fail on seam edges.
+- **Rebuilds replay only what changed.** The kernel worker keeps the model after each feature, keyed by a hash of the timeline up to it, and reuses the meshes of bodies that didn't change. An edit replays from the first feature it touches, and Cancel or Undo finds the old model still there. Rebuilds run on a background thread, so the window never freezes: a long one shows *Rebuilding…* over the viewport. On a 247-feature design, a cold rebuild takes 8 s; an edit near the end of the timeline takes 0.1–0.2 s.
 
 ---
 
@@ -260,7 +261,7 @@ Fission contains **no Autodesk code, icons, assets or text**. The UI was rebuilt
 cargo test --release --workspace --exclude opencascade
 ```
 
-There are 166 tests. They cover the sketch solver and every sketch tool, typed-value expressions, timeline semantics on a fake kernel (rollback, suppress, errors, undo, save/load, reference remapping), construction geometry, and real OCCT geometry: fillets, shells, drafts, holes, threads (checked watertight), coils, splits, exact areas and volumes, STEP round trips. Tests that decode and replay real `.f3d` files run when samples are present. Put them in `$FISSION_SAMPLES` (`flathex.f3d`, `clouds.f3d`, `camera.f3d`), or `out/f3d`.
+There are 167 tests. They cover the sketch solver and every sketch tool, typed-value expressions, timeline semantics on a fake kernel (rollback, suppress, errors, undo, save/load, reference remapping), construction geometry, and real OCCT geometry: fillets, shells, drafts, holes, threads (checked watertight), coils, splits, exact areas and volumes, STEP round trips. Tests that decode and replay real `.f3d` files run when samples are present. Put them in `$FISSION_SAMPLES` (`flathex.f3d`, `clouds.f3d`, `camera.f3d`), or `out/f3d`.
 
 `tools/stl/check_stl.py` checks that an exported mesh is printable: closed, consistently oriented, with its volume and bounding box. `tools/stl/flatten_orca.py` resolves OrcaSlicer preset inheritance so the slicer CLI can run in CI.
 
@@ -331,7 +332,9 @@ Commands (hotkeys follow Fusion):
   chain with it; also under Simplify ▸ Remove Faces). Select edges,
   faces or bodies first, or click them while the dialog is open. The dialog
   then shows the model *before* the feature so you can pick on it; tick
-  **Preview result** to see the outcome. Move/Copy and Joint dialogs open
+  **Preview result** to see the outcome. As in Fusion, the timeline rolls
+  back to the feature while its dialog is open, so changes rebuild only
+  that feature; the rest rebuilds on OK. Move/Copy and Joint dialogs open
   instantly and show the bodies moving live without rebuilding (OK and
   Cancel don't rebuild either when nothing later in the timeline builds on
   the moved bodies), with a gizmo: drag the X/Y/Z arrows to slide and the

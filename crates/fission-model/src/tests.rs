@@ -824,3 +824,48 @@ fn a_last_joint_moves_without_regenerating() {
     cut_moved.set_joint_value(j, -30.0);
     assert!(!cut_moved.only_joint_moved(&cut, j));
 }
+
+#[test]
+fn cached_regeneration_matches_a_fresh_one() {
+    let summary = |r: &Regen<String>| {
+        let bodies: Vec<_> = r.bodies.iter().map(|b| (b.name.clone(), b.solid.clone(), b.created_by)).collect();
+        (bodies, r.status.clone())
+    };
+    let mut cache = RegenCache::default();
+    let mut doc = Document::sample();
+    let check = |doc: &Document, cache: &mut RegenCache<String>| {
+        assert_eq!(summary(&doc.regenerate_cached(&Fake, cache)), summary(&doc.regenerate(&Fake)));
+    };
+    check(&doc, &mut cache);
+    assert_eq!(cache.len(), 4);
+    check(&doc, &mut cache);
+
+    // An edit in the middle, a failing feature, and back.
+    let FeatureKind::Extrude { distance, .. } = &mut doc.features[1].kind else { panic!() };
+    *distance = 30.0;
+    check(&doc, &mut cache);
+    let before_edit = cache.len();
+    let FeatureKind::Fillet { radius, .. } = &mut doc.features[3].kind else { panic!() };
+    *radius = 40.0;
+    check(&doc, &mut cache);
+    let FeatureKind::Fillet { radius, .. } = &mut doc.features[3].kind else { panic!() };
+    *radius = 2.0;
+    check(&doc, &mut cache);
+    assert_eq!(cache.len(), before_edit + 1, "undoing an edit finds the old model");
+
+    // Rolling back keeps the later steps for rolling forward again.
+    let kept = cache.len();
+    doc.marker = 2;
+    check(&doc, &mut cache);
+    doc.marker = 4;
+    check(&doc, &mut cache);
+    assert_eq!(cache.len(), kept, "nothing new was built");
+
+    // Suppressing, and renaming (which doesn't rebuild anything).
+    doc.features[2].suppressed = true;
+    check(&doc, &mut cache);
+    doc.features[0].body_name = Some("Base".into());
+    check(&doc, &mut cache);
+    assert_eq!(doc.regenerate_cached(&Fake, &mut cache).bodies[0].name, "Base");
+}
+

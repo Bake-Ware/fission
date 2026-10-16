@@ -103,7 +103,8 @@ impl FissionApp {
         // after every scrub.
         self.joint_preview = None;
         let before = self.doc.clone();
-        let built = self.status.get(feature) == Some(&FeatureStatus::Ok);
+        // Only when the screen shows the model as built, with nothing else waiting.
+        let built = self.status.get(feature) == Some(&FeatureStatus::Ok) && !self.regen_busy();
         self.commit(|doc| doc.set_joint_value(feature, value));
         if built && self.editing.is_none() && self.doc.only_joint_moved(&before, feature) {
             self.needs_regen = false;
@@ -150,7 +151,7 @@ impl FissionApp {
         let mut collided = false;
         for joint in &joints {
             let values = fission_model::motion::steps(joint.min, joint.max, 37);
-            match self.kernel.sweep(&self.doc, &joint.name, &values, INTERFERENCE_TOLERANCE) {
+            match self.kernel().sweep(&self.doc, &joint.name, &values, INTERFERENCE_TOLERANCE) {
                 Ok(sweep) => {
                     let worst = sweep.samples.iter().max_by(|a, b| a.overlap.total_cmp(&b.overlap));
                     match worst.filter(|s| s.overlap > INTERFERENCE_TOLERANCE) {

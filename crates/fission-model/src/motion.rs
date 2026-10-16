@@ -8,7 +8,7 @@
 
 use fission_kernel::{BooleanOp, Kernel};
 
-use crate::{Document, FeatureStatus, JointInfo, JointMotion, Rigid};
+use crate::{Document, FeatureStatus, JointInfo, JointMotion, Regen, Rigid};
 
 /// One sample of a sweep.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -87,7 +87,11 @@ impl Document {
     /// overlap the others at each one. Overlaps at or below `tolerance` mm³
     /// (touching faces) count as clear.
     pub fn sweep_joint<K: Kernel>(&self, kernel: &K, joint: &JointInfo, values: &[f64], tolerance: f64) -> Result<Sweep, String> {
-        let regen = self.regenerate(kernel);
+        self.sweep_joint_in(kernel, &self.regenerate(kernel), joint, values, tolerance)
+    }
+
+    /// `sweep_joint` on an already regenerated model.
+    pub fn sweep_joint_in<K: Kernel>(&self, kernel: &K, regen: &Regen<K::Solid>, joint: &JointInfo, values: &[f64], tolerance: f64) -> Result<Sweep, String> {
         if let Some(FeatureStatus::Error(e)) = regen.status.get(joint.feature) {
             return Err(format!("{}: {e}", joint.name));
         }

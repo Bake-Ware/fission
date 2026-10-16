@@ -1236,45 +1236,68 @@ impl Document {
 
     /// Replay the timeline up to the marker.
     pub fn regenerate<K: Kernel>(&self, kernel: &K) -> Regen<K::Solid> {
+        self.replay(kernel, None)
+    }
+
+    /// Replay the timeline up to the marker, starting from the last state in
+    /// `cache` that is still valid: features before the first one that
+    /// changed aren't rebuilt.
+    pub fn regenerate_cached<K: Kernel>(&self, kernel: &K, cache: &mut RegenCache<K::Solid>) -> Regen<K::Solid> {
+        self.replay(kernel, Some(cache))
+    }
+
+    fn replay<K: Kernel>(&self, kernel: &K, mut cache: Option<&mut RegenCache<K::Solid>>) -> Regen<K::Solid> {
         let mut bodies: Vec<Body<K::Solid>> = Vec::new();
         let mut status = Vec::with_capacity(self.features.len());
         let mut sketches: Vec<Option<SketchOutput>> = vec![None; self.features.len()];
         let mut parts = vec![0; self.features.len()];
         let mut part_faces = vec![Vec::new(); self.features.len()];
 
-        for (i, feature) in self.features.iter().enumerate() {
+        // Reuse cached steps up to the first feature that changed.
+        let end = self.marker.min(self.features.len());
+        let mut key = 0u64;
+        let mut keys = Vec::with_capacity(end);
+        for feature in &self.features[..end] {
+            key = step_key(key, feature);
+            keys.push(key);
+        }
+        let mut start = 0;
+        if let Some(cache) = cache.as_deref_mut() {
+            cache.tick += 1;
+            start = keys.iter().take_while(|k| cache.steps.contains_key(k)).count();
+            for (i, key) in keys[..start].iter().enumerate() {
+                let step = cache.steps.get_mut(key).unwrap();
+                step.used = cache.tick;
+                status.push(step.status.clone());
+                sketches[i] = step.sketch.clone();
+                parts[i] = step.parts;
+                part_faces[i] = step.part_faces.clone();
+                if i + 1 == start {
+                    bodies = step.bodies.clone();
+                }
+            }
+        }
+
+        for i in start..self.features.len() {
             if i >= self.marker {
                 status.push(FeatureStatus::RolledBack);
                 continue;
             }
-            if feature.suppressed {
-                status.push(FeatureStatus::Suppressed);
-                continue;
+            status.push(self.step(kernel, i, &mut bodies, &mut sketches, (&mut parts, &mut part_faces)));
+            if let Some(cache) = cache.as_deref_mut() {
+                let step = CachedStep {
+                    bodies: bodies.clone(),
+                    status: status[i].clone(),
+                    sketch: sketches[i].clone(),
+                    parts: parts[i],
+                    part_faces: part_faces[i].clone(),
+                    used: cache.tick,
+                };
+                cache.steps.insert(keys[i], step);
             }
-            if let FeatureKind::Plane { .. } | FeatureKind::Axis { .. } | FeatureKind::Point { .. } | FeatureKind::Canvas { .. } = &feature.kind {
-                status.push(FeatureStatus::Ok);
-                continue;
-            }
-            if let FeatureKind::Unsupported { kind, note } = &feature.kind {
-                let why = if note.is_empty() { String::new() } else { format!(": {note}") };
-                status.push(FeatureStatus::Error(format!("Fusion's {kind} isn't replayed yet{why}")));
-                continue;
-            }
-            if let FeatureKind::Sketch { .. } = &feature.kind {
-                match sketch_output(&feature.kind) {
-                    Some(Ok(out)) => {
-                        sketches[i] = Some(out);
-                        status.push(FeatureStatus::Ok);
-                    }
-                    Some(Err(e)) => status.push(FeatureStatus::Error(e)),
-                    None => unreachable!(),
-                }
-                continue;
-            }
-            match apply(kernel, feature, &mut bodies, &sketches, (&mut parts, &mut part_faces), i) {
-                Ok(()) => status.push(FeatureStatus::Ok),
-                Err(message) => status.push(FeatureStatus::Error(message)),
-            }
+        }
+        if let Some(cache) = cache {
+            cache.evict(2 * self.features.len() + 32);
         }
         for body in &mut bodies {
             if let Some(name) = self.features.get(body.created_by).and_then(|f| f.body_name.clone()) {
@@ -1283,6 +1306,111 @@ impl Document {
         }
         Regen { bodies, status, parts, part_faces, sketches }
     }
+
+    /// Apply feature `i` (before the marker) to `bodies`.
+    fn step<K: Kernel>(
+        &self,
+        kernel: &K,
+        i: usize,
+        bodies: &mut Vec<Body<K::Solid>>,
+        sketches: &mut [Option<SketchOutput>],
+        tally: PartTally<'_>,
+    ) -> FeatureStatus {
+        let feature = &self.features[i];
+        if feature.suppressed {
+            return FeatureStatus::Suppressed;
+        }
+        match &feature.kind {
+            FeatureKind::Plane { .. } | FeatureKind::Axis { .. } | FeatureKind::Point { .. } | FeatureKind::Canvas { .. } => FeatureStatus::Ok,
+            FeatureKind::Unsupported { kind, note } => {
+                let why = if note.is_empty() { String::new() } else { format!(": {note}") };
+                FeatureStatus::Error(format!("Fusion's {kind} isn't replayed yet{why}"))
+            }
+            FeatureKind::Sketch { .. } => match sketch_output(&feature.kind) {
+                Some(Ok(out)) => {
+                    sketches[i] = Some(out);
+                    FeatureStatus::Ok
+                }
+                Some(Err(e)) => FeatureStatus::Error(e),
+                None => unreachable!(),
+            },
+            _ => match apply(kernel, feature, bodies, sketches, tally, i) {
+                Ok(()) => FeatureStatus::Ok,
+                Err(message) => FeatureStatus::Error(message),
+            },
+        }
+    }
+}
+
+/// Kernel state after each feature of recent replays, so the next replay
+/// starts at the first feature that changed. Steps are keyed by the timeline
+/// up to them, so the model from before an edit is still there on Cancel or
+/// Undo. Bodies share their solids with the steps that didn't touch them, so
+/// this costs about a solid per feature.
+pub struct RegenCache<S> {
+    steps: std::collections::HashMap<u64, CachedStep<S>>,
+    /// Counts replays, to forget the least recently used steps first.
+    tick: u64,
+}
+
+impl<S> Default for RegenCache<S> {
+    fn default() -> Self {
+        RegenCache { steps: Default::default(), tick: 0 }
+    }
+}
+
+impl<S> RegenCache<S> {
+    /// Cached steps, over every timeline kept.
+    pub fn len(&self) -> usize {
+        self.steps.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.steps.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.steps.clear();
+    }
+
+    /// Keep at most `limit` steps, the most recently used.
+    fn evict(&mut self, limit: usize) {
+        if self.steps.len() <= limit {
+            return;
+        }
+        let mut ages: Vec<u64> = self.steps.values().map(|s| s.used).collect();
+        ages.sort_unstable();
+        let cutoff = ages[ages.len() - limit];
+        self.steps.retain(|_, s| s.used >= cutoff);
+    }
+}
+
+/// The model after one feature; keyed by `step_key` of the timeline up to it.
+struct CachedStep<S> {
+    bodies: Vec<Body<S>>,
+    status: FeatureStatus,
+    sketch: Option<SketchOutput>,
+    parts: usize,
+    part_faces: Vec<(usize, usize)>,
+    /// `RegenCache::tick` of the last replay that used it.
+    used: u64,
+}
+
+/// A hash of everything about `feature` that the geometry depends on, chained
+/// on the key of the features before it. Names, colors and expressions don't
+/// count (expressions have already written their values into the feature).
+fn step_key(previous: u64, feature: &Feature) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    previous.hash(&mut h);
+    ron::to_string(&(&feature.kind, feature.suppressed, feature.target)).unwrap_or_default().hash(&mut h);
+    // An imported file can change on disk.
+    if let FeatureKind::ImportStep { path, .. } = &feature.kind {
+        if let Ok(meta) = std::fs::metadata(path) {
+            (meta.len(), meta.modified().ok()).hash(&mut h);
+        }
+    }
+    h.finish()
 }
 
 /// Where imports record their parts: counts, and (part, face count) lists.
